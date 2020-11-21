@@ -27,9 +27,6 @@ static int	get_int_array_hash(int *arr, int len);
 static int	get_unsorted_unsafe_int_array_hash(int *arr, int len);
 static int	get_unordered_int_list_hash(List *lst);
 
-static int	get_relidslist_hash(List *relidslist);
-static int get_fss_hash(int clauses_hash, int eclasses_hash,
-			 int relidslist_hash);
 
 static char *replace_patterns(const char *str, const char *start_pattern,
 				 bool (*end_pattern) (char ch));
@@ -79,20 +76,16 @@ get_query_hash(Query *parse, const char *query_text)
  */
 int
 get_fss_for_object(List *clauselist, List *selectivities, List *relidslist,
-				   int *nfeatures, double **features)
+				   int *nfeatures, int *nrels, double **features, int **rels, int **sorted_clauses)
 {
 	int			n;
 	int		   *clause_hashes;
-	int		   *sorted_clauses;
 	int		   *idx;
 	int		   *inverse_idx;
 	bool	   *clause_has_consts;
 	int			nargs;
 	int		   *args_hash;
 	int		   *eclass_hash;
-	int			clauses_hash;
-	int			eclasses_hash;
-	int			relidslist_hash;
 	List	  **args;
 	ListCell   *l;
 	int			i,
@@ -101,7 +94,7 @@ get_fss_for_object(List *clauselist, List *selectivities, List *relidslist,
 				m;
 	int			sh = 0,
 				old_sh;
-	int fss_hash;
+	double summ;
 
 	n = list_length(clauselist);
 
@@ -109,7 +102,7 @@ get_fss_for_object(List *clauselist, List *selectivities, List *relidslist,
 
 	clause_hashes = palloc(sizeof(*clause_hashes) * n);
 	clause_has_consts = palloc(sizeof(*clause_has_consts) * n);
-	sorted_clauses = palloc(sizeof(*sorted_clauses) * n);
+	*sorted_clauses = palloc0(sizeof(**sorted_clauses) * n);
 	*features = palloc0(sizeof(**features) * n);
 
 	i = 0;
@@ -132,51 +125,50 @@ get_fss_for_object(List *clauselist, List *selectivities, List *relidslist,
 		(*features)[inverse_idx[i]] = log(*((double *) (lfirst(l))));
 		if ((*features)[inverse_idx[i]] < log_selectivity_lower_bound)
 			(*features)[inverse_idx[i]] = log_selectivity_lower_bound;
-		sorted_clauses[inverse_idx[i]] = clause_hashes[i];
+		(*sorted_clauses)[inverse_idx[i]] = clause_hashes[i];
 		i++;
 	}
 
 	for (i = 0; i < n;)
 	{
-		k = 0;
-		for (j = i; j < n && sorted_clauses[j] == sorted_clauses[i]; ++j)
-			k += (int) clause_has_consts[idx[j]];
-		m = j;
 		old_sh = sh;
-		for (j = i; j < n && sorted_clauses[j] == sorted_clauses[i]; ++j)
-			if (clause_has_consts[idx[j]] || k + 1 == m - i)
-			{
-				(*features)[j - sh] = (*features)[j];
-				sorted_clauses[j - sh] = sorted_clauses[j];
-			}
-			else
+		k = 1;
+		summ = (*features)[i];
+		for (j = i+1; j < n && (*sorted_clauses)[j] == (*sorted_clauses)[i]; ++j)
+			{   summ = summ + (*features)[j];
+                ++k;
+				(*features)[i] = summ/k;
 				sh++;
-		qsort(&((*features)[i - old_sh]), j - sh - (i - old_sh),
-			  sizeof(**features), double_cmp);
+			}
+        (*sorted_clauses)[i-old_sh] = (*sorted_clauses)[i];
+        (*features)[i-old_sh] = (*features)[i];
 		i = j;
 	}
 
 	*nfeatures = n - sh;
 	(*features) = repalloc(*features, (*nfeatures) * sizeof(**features));
+	(*sorted_clauses) = repalloc(*sorted_clauses, (*nfeatures) * sizeof(**sorted_clauses));
+
+	i = 0;
+
+	*nrels = list_length(relidslist);
+	*rels = palloc0(sizeof(**rels) * (*nrels));
+	foreach(l, relidslist)
+		(*rels)[i++] = lfirst_int(l);
 
 	/*
 	 * Generate feature subspace hash.
 	 * XXX: Remember! that relidslist_hash isn't portable between postgres
 	 * instances.
 	 */
-	clauses_hash = get_int_array_hash(sorted_clauses, *nfeatures);
-	eclasses_hash = get_int_array_hash(eclass_hash, nargs);
-	relidslist_hash = get_relidslist_hash(relidslist);
-	fss_hash = get_fss_hash(clauses_hash, eclasses_hash, relidslist_hash);
 
 	pfree(clause_hashes);
-	pfree(sorted_clauses);
 	pfree(idx);
 	pfree(inverse_idx);
 	pfree(clause_has_consts);
 	pfree(args_hash);
 	pfree(eclass_hash);
-	return fss_hash;
+	return 1;
 }
 
 /*
@@ -315,31 +307,6 @@ replace_patterns(const char *str, const char *start_pattern,
 	return res;
 }
 
-/*
- * Computes hash for given feature subspace.
- * Hash is supposed to be clause-order-insensitive.
- */
-int
-get_fss_hash(int clauses_hash, int eclasses_hash, int relidslist_hash)
-{
-	int			hashes[3];
-
-	hashes[0] = clauses_hash;
-	hashes[1] = eclasses_hash;
-	hashes[2] = relidslist_hash;
-	return DatumGetInt32(hash_any((const unsigned char *) hashes,
-								  3 * sizeof(*hashes)));
-}
-
-/*
- * Computes hash for given list of relids.
- * Hash is supposed to be relids-order-insensitive.
- */
-int
-get_relidslist_hash(List *relidslist)
-{
-	return get_unordered_int_list_hash(relidslist);
-}
 
 /*
  * Returns the C-string in which the substrings of kind "{CONST.*}" are
