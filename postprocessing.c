@@ -165,7 +165,6 @@ atomic_fss_learn_step(int fss_hash,
 		}
 		feats = repalloc(feats, (ncols+to_add) * sizeof(*feats));
 		new_W1 = (double**)palloc0(sizeof(double*) * WIDTH_1);
-		srand(1);
 		stdv = 1 / sqrt(ncols+to_add);
 		for (i = 0; i < WIDTH_1; ++i)
 			new_W1[i] = palloc0(sizeof(**new_W1) * (ncols+to_add));
