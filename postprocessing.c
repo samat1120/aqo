@@ -40,9 +40,12 @@ static char *PlanStateInfo = "PlanStateInfo";
 
 
 /* Query execution statistics collecting utilities */
-static void atomic_fss_learn_step(int fss_hash, int ncols,
-					  double **matrix, double *targets,
-					  double *features, double target);
+static void nn_init (int ncols, double **W1, double **W2, double *W3, double *b1, double *b2, double b3);
+
+static void atomic_fss_learn_step(int fss_hash,
+								double **W1, double **W2, double *W3, double *b1, double *b2, double b3,
+								double *features, double target,
+								int nfeatures, int nrels, int *rels, int *sorted_clauses);
 static void learn_sample(List *clauselist,
 			 List *selectivities,
 			 List *relidslist,
@@ -64,23 +67,135 @@ static void StorePlanInternals(QueryDesc *queryDesc);
 static bool ExtractFromQueryContext(QueryDesc *queryDesc);
 static void RemoveFromQueryContext(QueryDesc *queryDesc);
 
+static void
+nn_init (int ncols, double **W1, double **W2, double *W3, double *b1, double *b2, double b3){ //initializing weights (standard Xavier http://proceedings.mlr.press/v9/glorot10a/glorot10a.pdf)
+    double	stdv;
+    srand(0);
+    stdv = 1 / sqrt(ncols);
+    for (int i = 0; i < WIDTH_1; ++i)
+        for (int j = 0; j < ncols; ++j){
+            W1[i][j] = (stdv + stdv)*(rand()/(double)RAND_MAX) - stdv;
+    }
+    for (int i = 0; i < WIDTH_1; ++i)
+        b1[i] = (stdv + stdv)*(rand()/(double)RAND_MAX) - stdv;
+    stdv = 1 / sqrt(WIDTH_1);
+    for (int i = 0; i < WIDTH_2; ++i)
+        for (int j = 0; j < WIDTH_1; ++j){
+            W2[i][j] = (stdv + stdv)*(rand()/(double)RAND_MAX) - stdv;
+    }
+    for (int i = 0; i < WIDTH_2; ++i)
+        b2[i] = (stdv + stdv)*(rand()/(double)RAND_MAX) - stdv;
+    stdv = 1 / sqrt(WIDTH_2);
+    for (int i = 0; i < WIDTH_2; ++i)
+        W3[i] = (stdv + stdv)*(rand()/(double)RAND_MAX) - stdv;
+    b3 = (stdv + stdv)*(rand()/(double)RAND_MAX) - stdv;
+}
+
 /*
  * This is the critical section: only one runner is allowed to be inside this
  * function for one feature subspace.
  * matrix and targets are just preallocated memory for computations.
  */
-static void
-atomic_fss_learn_step(int fss_hash, int ncols,
-					  double **matrix, double *targets,
-					  double *features, double target)
+static void 
+atomic_fss_learn_step(int fss_hash,
+					  double **W1, double **W2, double *W3, double *b1, double *b2, double b3,
+					  double *features, double target,
+					  int nfeatures, int nrels, int *rels, int *sorted_clauses)
 {
-	int	nrows;
+	int	*hashes;
+	int ncols;
+	int	*hshes, *new_hashes;
+	double *feats, *fs;
+	int i,j,tmp,to_add;
+	double	**new_W1;
+	double stdv;
+	if (!load_fss(fss_hash, &ncols, &hashes, W1, W2, W3, b1, b2, b3)){
+		for (i = 0; i < WIDTH_1; ++i)
+			W1[i] = palloc(sizeof(double) * (nfeatures+nrels));
+		nn_init ((nfeatures+nrels), W1, W2, W3, b1, b2, b3);
+		hashes = palloc0(sizeof(*hashes) * (nfeatures+nrels));
+		feats = palloc0(sizeof(*feats) * (nfeatures+nrels));
+		for (i=0;i<nfeatures;i++){
+			hashes[i] = sorted_clauses[i];
+			feats[i] = features[i];
+		}
+		for (i=0;i<nrels;i++){
+			hashes[nfeatures+i] = rels[i];
+			feats[nfeatures+i] = 1;
+		}
+		neural_learn((nfeatures+nrels), W1, b1, W2, b2, W3, b3, feats, target);
+		update_fss(fss_hash, (nfeatures+nrels), W1, W2, W3, b1, b2, b3, hashes);
+		if ((nfeatures+nrels) > 0)
+			for (i = 0; i < WIDTH_1; ++i)
+				pfree(W1[i]);
+		pfree(W1);
+		pfree(hashes);
+		pfree(feats);
+	}
+	else{
+		hshes = palloc0(sizeof(*hshes) * (nfeatures+nrels));
+		fs = palloc0(sizeof(*fs) * (nfeatures+nrels));
+		for (i=0;i<nfeatures;i++){
+			hshes[i] = sorted_clauses[i];
+			fs[i] = features[i];
+		}
+		for (i=0;i<nrels;i++){
+			hshes[i+nfeatures] = rels[i];
+			fs[nfeatures+i] = 1;
+		}
+		feats = palloc0(sizeof(*feats) * (ncols+nfeatures+nrels));
+		new_hashes = palloc0(sizeof(*new_hashes) * (ncols+nfeatures+nrels));
+		for (i=0;i<ncols;i++)
+			new_hashes[i] = hashes[i];
+		to_add=0;
+		for (i=0;i<(nfeatures+nrels);i++){
+			tmp = i;
+			for (j=0;j<ncols;j++){
+				if(hashes[j]==hshes[i]){
+					feats[j]=fs[i];
+					++tmp;
+					break;
+				}
+			}
+			if (tmp==i){
+				new_hashes[ncols+to_add]=hshes[i];
+				feats[ncols+to_add]=fs[i];
+				++to_add;
+			}
+		}
+		feats = repalloc(feats, (ncols+to_add) * sizeof(*feats));
+		new_W1 = (double**)palloc0(sizeof(double*) * WIDTH_1);
+		srand(1);
+		stdv = 1 / sqrt(ncols+to_add);
+		for (i = 0; i < WIDTH_1; ++i)
+			new_W1[i] = palloc0(sizeof(**new_W1) * (ncols+to_add));
+		for (j = 0; j < (ncols+to_add); ++j){
+			for (i = 0; i < WIDTH_1; ++i){
+				new_W1[i][j] = (stdv + stdv)*(rand()/(double)RAND_MAX) - stdv;
+			}
+		}
+		for (i = 0; i < WIDTH_1; ++i){
+			for (j = 0; j < ncols; ++j){
+				new_W1[i][j] = W1[i][j];
+			}
+		}
+		neural_learn((ncols+to_add), new_W1, b1, W2, b2, W3, b3, feats, target);
+		update_fss(fss_hash, (ncols+to_add), new_W1, W2, W3, b1, b2, b3, new_hashes);
 
-	if (!load_fss(fss_hash, ncols, matrix, targets, &nrows))
-		nrows = 0;
-
-	nrows = OkNNr_learn(nrows, ncols, matrix, targets, features, target);
-	update_fss(fss_hash, nrows, ncols, matrix, targets);
+		if (ncols > 0)
+			for (i = 0; i < WIDTH_1; ++i)
+				pfree(W1[i]);
+		if ((ncols+to_add) > 0)
+			for (i = 0; i < WIDTH_1; ++i)
+				pfree(new_W1[i]);
+		pfree(W1);
+		pfree(new_W1);
+		pfree(hshes);
+		pfree(hashes);
+		pfree(fs);
+		pfree(feats);
+		pfree(new_hashes);
+	}
 }
 
 /*
@@ -93,11 +208,23 @@ learn_sample(List *clauselist, List *selectivities, List *relidslist,
 {
 	int			fss_hash;
 	int			nfeatures;
-	double	  *matrix[aqo_K];
-	double	   targets[aqo_K];
+	int	   nrels;
+	double	**W1;
+	double	**W2;
+	double	*W3;
+	double	*b1;
+	double	*b2;
+	double	b3 = 0;
 	double	   *features;
 	double		target;
+	int	*rels;
+	int	*sorted_clauses;
 	int			i;
+	W1 = (double**) palloc(sizeof(double*) * WIDTH_1);
+	W2 = (double**) palloc(sizeof(double*) * WIDTH_2);
+	W3 = palloc(sizeof(*W3) * WIDTH_2);
+	b1 = palloc(sizeof(*b1) * WIDTH_1);
+	b2 = palloc(sizeof(*b2) * WIDTH_2);
 
 /*
  * Suppress the optimization for debug purposes.
@@ -110,21 +237,27 @@ learn_sample(List *clauselist, List *selectivities, List *relidslist,
 	target = log(true_cardinality);
 
 	fss_hash = get_fss_for_object(clauselist, selectivities, relidslist,
-					   &nfeatures, &features);
+					   &nfeatures, &nrels, &features, &rels, &sorted_clauses);
 
-	if (nfeatures > 0)
-		for (i = 0; i < aqo_K; ++i)
-			matrix[i] = palloc(sizeof(double) * nfeatures);
+	for (i = 0; i < WIDTH_2; ++i)
+		W2[i] = palloc(sizeof(double) * WIDTH_1);
 
 	/* Here should be critical section */
-	atomic_fss_learn_step(fss_hash, nfeatures, matrix, targets, features, target);
+	atomic_fss_learn_step(fss_hash,
+					  W1, W2, W3, b1, b2, b3,
+					  features, target,
+					  nfeatures, nrels, rels, sorted_clauses);
 	/* Here should be the end of critical section */
 
-	if (nfeatures > 0)
-		for (i = 0; i < aqo_K; ++i)
-			pfree(matrix[i]);
-
+	for (i = 0; i < WIDTH_2; ++i)
+		pfree(W2[i]);
+	pfree(W2);
+	pfree(W3);
+	pfree(b1);
+	pfree(b2);
 	pfree(features);
+	pfree(rels);
+	pfree(sorted_clauses);
 }
 
 /*
