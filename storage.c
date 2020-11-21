@@ -29,6 +29,9 @@ static void deform_matrix(Datum datum, double **matrix);
 static ArrayType *form_vector(double *vector, int nrows);
 static void deform_vector(Datum datum, double *vector, int *nelems);
 
+static ArrayType *form_int_vector(int *vector, int nrows);
+static void deform_int_vector(Datum datum, int *vector, int *nelems);
+
 #define FormVectorSz(v_name)			(form_vector((v_name), (v_name ## _size)))
 #define DeformVectorSz(datum, v_name)	(deform_vector((datum), (v_name), &(v_name ## _size)))
 
@@ -357,7 +360,7 @@ add_query_text(int query_hash, const char *query_text)
  *			objects in the given feature space
  */
 bool
-load_fss(int fss_hash, int ncols, double **matrix, double *targets, int *rows)
+load_fss(int fss_hash, int *ncols, int **hashes, double **W1, double **W2, double *W3, double *b1, double *b2, double b3)
 {
 	RangeVar   *aqo_data_table_rv;
 	Relation	aqo_data_heap;
@@ -373,11 +376,14 @@ load_fss(int fss_hash, int ncols, double **matrix, double *targets, int *rows)
 
 	LOCKMODE	lockmode = AccessShareLock;
 
-	Datum		values[5];
-	bool		isnull[5];
+	Datum		values[10];
+	bool		isnull[10];
 
 	bool		success = true;
+	int widthh_1, widthh_2;
 
+	widthh_1 = WIDTH_1;
+	widthh_2 = WIDTH_2;
 	data_index_rel_oid = RelnameGetRelid("aqo_fss_access_idx");
 	if (!OidIsValid(data_index_rel_oid))
 	{
@@ -419,32 +425,38 @@ load_fss(int fss_hash, int ncols, double **matrix, double *targets, int *rows)
 		Assert(shouldFree != true);
 		heap_deform_tuple(tuple, aqo_data_heap->rd_att, values, isnull);
 
-		if (DatumGetInt32(values[2]) == ncols)
-		{
-			if (ncols > 0)
-				/*
-				 * The case than an object has not any filters and selectivities
-				 */
-				deform_matrix(values[3], matrix);
+		*ncols =  DatumGetInt32(values[2]);
 
-			deform_vector(values[4], targets, rows);
-		}
-		else
-		{
-			elog(WARNING, "unexpected number of features for hash (%d, %d):\
-						   expected %d features, obtained %d",
-						   query_context.fspace_hash,
-						   fss_hash, ncols, DatumGetInt32(values[2]));
-			success = false;
-		}
+		if (*ncols > 0)
+			for (int i = 0; i < WIDTH_1; ++i)
+				W1[i] = palloc0(sizeof(**W1) * (*ncols));
+
+		*hashes = palloc0(sizeof(**hashes) * (*ncols));
+
+		if (*ncols > 0)
+			/*
+			 * The case than an object has not any filters and selectivities
+			 */
+			deform_matrix(values[3], W1);
+				
+		deform_matrix(values[4], W2);
+		deform_vector(values[5], W3, &widthh_2);
+		deform_vector(values[6], b1, &widthh_1);
+		deform_vector(values[7], b2, &widthh_2);
+		b3 = DatumGetFloat8(values[8]);
+		deform_int_vector(values[9], (*hashes), ncols);
 	}
 	else
 		success = false;
+
+
 
 	ExecDropSingleTupleTableSlot(slot);
 	index_endscan(data_index_scan);
 	index_close(data_index_rel, lockmode);
 	table_close(aqo_data_heap, lockmode);
+
+
 
 	return success;
 }
@@ -458,7 +470,7 @@ load_fss(int fss_hash, int ncols, double **matrix, double *targets, int *rows)
  * 'targets' is vector of size 'nrows'
  */
 bool
-update_fss(int fss_hash, int nrows, int ncols, double **matrix, double *targets)
+update_fss(int fss_hash, int ncols, double **W1, double **W2, double *W3, double *b1, double *b2, double b3, int *hashes)
 {
 	RangeVar   *aqo_data_table_rv;
 	Relation	aqo_data_heap;
@@ -478,9 +490,9 @@ update_fss(int fss_hash, int nrows, int ncols, double **matrix, double *targets)
 	IndexScanDesc data_index_scan;
 	ScanKeyData	key[2];
 
-	Datum		values[5];
-	bool		isnull[5] = { false, false, false, false, false };
-	bool		replace[5] = { false, false, false, true, true };
+	Datum		values[10];
+	bool		isnull[10] = { false, false, false, false, false, false, false, false, false, false };
+	bool		replace[10] = { false, true, true, true, true, true, true, true, true, true };
 
 	data_index_rel_oid = RelnameGetRelid("aqo_fss_access_idx");
 	if (!OidIsValid(data_index_rel_oid))
@@ -525,12 +537,20 @@ update_fss(int fss_hash, int nrows, int ncols, double **matrix, double *targets)
 		values[1] = Int32GetDatum(fss_hash);
 		values[2] = Int32GetDatum(ncols);
 
-		if (ncols > 0)
-			values[3] = PointerGetDatum(form_matrix(matrix, nrows, ncols));
-		else
+		if (ncols > 0){
+			values[3] = PointerGetDatum(form_matrix(W1, WIDTH_1, ncols));
+			values[9] = PointerGetDatum(form_int_vector(hashes, ncols));
+		}
+		else{
 			isnull[3] = true;
+			isnull[9] = true;
+		}
 
-		values[4] = PointerGetDatum(form_vector(targets, nrows));
+		values[4] = PointerGetDatum(form_matrix(W2, WIDTH_2, WIDTH_1));
+		values[5] = PointerGetDatum(form_vector(W3, WIDTH_2));
+		values[6] = PointerGetDatum(form_vector(b1, WIDTH_1));
+		values[7] = PointerGetDatum(form_vector(b2, WIDTH_2));
+		values[8] = Float8GetDatum(b3);
 		tuple = heap_form_tuple(tuple_desc, values, isnull);
 		PG_TRY();
 		{
@@ -552,12 +572,22 @@ update_fss(int fss_hash, int nrows, int ncols, double **matrix, double *targets)
 		Assert(shouldFree != true);
 		heap_deform_tuple(tuple, aqo_data_heap->rd_att, values, isnull);
 
-		if (ncols > 0)
-			values[3] = PointerGetDatum(form_matrix(matrix, nrows, ncols));
-		else
-			isnull[3] = true;
+		values[2] = Int32GetDatum(ncols);
 
-		values[4] = PointerGetDatum(form_vector(targets, nrows));
+		if (ncols > 0){
+			values[3] = PointerGetDatum(form_matrix(W1, WIDTH_1, ncols));
+			values[9] = PointerGetDatum(form_int_vector(hashes, ncols));
+		}
+		else{
+			isnull[3] = true;
+			isnull[9] = true;
+		}
+
+		values[4] = PointerGetDatum(form_matrix(W2, WIDTH_2, WIDTH_1));
+		values[5] = PointerGetDatum(form_vector(W3, WIDTH_2));
+		values[6] = PointerGetDatum(form_vector(b1, WIDTH_1));
+		values[7] = PointerGetDatum(form_vector(b2, WIDTH_2));
+		values[8] = Float8GetDatum(b3);
 		nw_tuple = heap_modify_tuple(tuple, tuple_desc,
 									 values, isnull, replace);
 		if (my_simple_heap_update(aqo_data_heap, &(nw_tuple->t_self), nw_tuple,
@@ -833,6 +863,26 @@ deform_matrix(Datum datum, double **matrix)
 }
 
 /*
+ * Expands int vector from storage into simple C-array.
+ * Also returns its number of elements.
+ */
+void
+deform_int_vector(Datum datum, int *vector, int *nelems)
+{
+	ArrayType  *array = DatumGetArrayTypePCopy(PG_DETOAST_DATUM(datum));
+	Datum	   *values;
+	int			i;
+
+	deconstruct_array(array,
+					  INT4OID, 4, true, 'i',
+					  &values, NULL, nelems);
+	for (i = 0; i < *nelems; ++i)
+		vector[i] = DatumGetInt32(values[i]);
+	pfree(values);
+	pfree(array);
+}
+
+/*
  * Expands vector from storage into simple C-array.
  * Also returns its number of elements.
  */
@@ -875,6 +925,26 @@ form_matrix(double **matrix, int nrows, int ncols)
 
 	array = construct_md_array(elems, NULL, 2, dims, lbs,
 							   FLOAT8OID, 8, FLOAT8PASSBYVAL, 'd');
+	pfree(elems);
+	return array;
+}
+
+ArrayType *
+form_int_vector(int *vector, int nrows)
+{
+	Datum	   *elems;
+	ArrayType  *array;
+	int			dims[1];
+	int			lbs[1];
+	int			i;
+
+	dims[0] = nrows;
+	lbs[0] = 1;
+	elems = palloc(sizeof(*elems) * nrows);
+	for (i = 0; i < nrows; ++i)
+		elems[i] = Int32GetDatum(vector[i]);
+	array = construct_md_array(elems, NULL, 1, dims, lbs,
+								INT4OID, 4, true, 'i');
 	pfree(elems);
 	return array;
 }
