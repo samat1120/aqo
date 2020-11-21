@@ -1,1084 +1,895 @@
 /*
  *******************************************************************************
  *
- *	STORAGE INTERACTION
+ *	QUERY EXECUTION STATISTICS COLLECTING UTILITIES
  *
- * This module is responsible for interaction with the storage of AQO data.
- * It does not provide information protection from concurrent updates.
+ * The module which updates data in the feature space linked with executed query
+ * type using obtained query execution statistics.
+ * Works only if aqo_learn is on.
  *
  *******************************************************************************
  *
  * Copyright (c) 2016-2020, Postgres Professional
  *
  * IDENTIFICATION
- *	  aqo/storage.c
+ *	  aqo/postprocessing.c
  *
  */
 
 #include "aqo.h"
+#include "access/parallel.h"
+#include "optimizer/optimizer.h"
+#include "utils/queryenvironment.h"
 
-#include "access/heapam.h"
-#include "access/table.h"
-#include "access/tableam.h"
-
-HTAB *deactivated_queries = NULL;
-
-static ArrayType *form_matrix(double **matrix, int nrows, int ncols);
-static void deform_matrix(Datum datum, double **matrix);
-
-static ArrayType *form_vector(double *vector, int nrows);
-static void deform_vector(Datum datum, double *vector, int *nelems);
-
-static ArrayType *form_int_vector(int *vector, int nrows);
-static void deform_int_vector(Datum datum, int *vector, int *nelems);
-
-#define FormVectorSz(v_name)			(form_vector((v_name), (v_name ## _size)))
-#define DeformVectorSz(datum, v_name)	(deform_vector((datum), (v_name), &(v_name ## _size)))
-
-
-static bool my_simple_heap_update(Relation relation,
-								  ItemPointer otid,
-								  HeapTuple tup,
-								  bool *update_indexes);
-
-static bool my_index_insert(Relation indexRelation,
-							Datum *values,
-							bool *isnull,
-							ItemPointer heap_t_ctid,
-							Relation heapRelation,
-							IndexUniqueCheck checkUnique);
-
-
-/*
- * Returns whether the query with given hash is in aqo_queries.
- * If yes, returns the content of the first line with given hash.
- */
-bool
-find_query(int query_hash,
-		   Datum *search_values,
-		   bool *search_nulls)
+typedef struct
 {
-	RangeVar   *aqo_queries_table_rv;
-	Relation	aqo_queries_heap;
-	HeapTuple	tuple;
-	TupleTableSlot *slot;
-	bool shouldFree;
+	List *clauselist;
+	List *selectivities;
+	List *relidslist;
+	bool learn;
+} aqo_obj_stat;
 
-	LOCKMODE	lockmode = AccessShareLock;
+static double cardinality_sum_errors;
+static int	cardinality_num_objects;
 
-	Relation	query_index_rel;
-	Oid			query_index_rel_oid;
-	IndexScanDesc query_index_scan;
-	ScanKeyData key;
+/* It is needed to recognize stored Query-related aqo data in the query
+ * environment field.
+ */
+static char *AQOPrivateData = "AQOPrivateData";
+static char *PlanStateInfo = "PlanStateInfo";
 
-	bool		find_ok = false;
 
-	query_index_rel_oid = RelnameGetRelid("aqo_queries_query_hash_idx");
-	if (!OidIsValid(query_index_rel_oid))
-	{
-		disable_aqo_for_query();
-		return false;
-	}
+/* Query execution statistics collecting utilities */
+static void nn_init (int ncols, double **W1, double **W2, double *W3, double *b1, double *b2, double b3);
 
-	aqo_queries_table_rv = makeRangeVar("public", "aqo_queries", -1);
-	aqo_queries_heap = table_openrv(aqo_queries_table_rv, lockmode);
+static void atomic_fss_learn_step(int fss_hash,
+								double **W1, double **W2, double *W3, double *b1, double *b2, double b3,
+								double *features, double target,
+								int nfeatures, int nrels, int *rels, int *sorted_clauses);
+static void learn_sample(List *clauselist,
+			 List *selectivities,
+			 List *relidslist,
+			 double true_cardinality,
+			 double predicted_cardinality);
+static List *restore_selectivities(List *clauselist,
+					  List *relidslist,
+					  JoinType join_type,
+					  bool was_parametrized);
+static void update_query_stat_row(double *et, int *et_size,
+					  double *pt, int *pt_size,
+					  double *ce, int *ce_size,
+					  double planning_time,
+					  double execution_time,
+					  double cardinality_error,
+					  int64 *n_exec);
+static void StoreToQueryContext(QueryDesc *queryDesc);
+static void StorePlanInternals(QueryDesc *queryDesc);
+static bool ExtractFromQueryContext(QueryDesc *queryDesc);
+static void RemoveFromQueryContext(QueryDesc *queryDesc);
 
-	query_index_rel = index_open(query_index_rel_oid, lockmode);
-	query_index_scan = index_beginscan(aqo_queries_heap,
-									   query_index_rel,
-									   SnapshotSelf,
-									   1,
-									   0);
-
-	ScanKeyInit(&key,
-				1,
-				BTEqualStrategyNumber,
-				F_INT4EQ,
-				Int32GetDatum(query_hash));
-
-	index_rescan(query_index_scan, &key, 1, NULL, 0);
-
-	slot = MakeSingleTupleTableSlot(query_index_scan->heapRelation->rd_att,
-														&TTSOpsBufferHeapTuple);
-	find_ok = index_getnext_slot(query_index_scan, ForwardScanDirection, slot);
-
-	if (find_ok)
-	{
-		tuple = ExecFetchSlotHeapTuple(slot, true, &shouldFree);
-		Assert(shouldFree != true);
-		heap_deform_tuple(tuple, aqo_queries_heap->rd_att,
-												search_values, search_nulls);
-	}
-
-	ExecDropSingleTupleTableSlot(slot);
-	index_endscan(query_index_scan);
-	index_close(query_index_rel, lockmode);
-	table_close(aqo_queries_heap, lockmode);
-
-	return find_ok;
+static void
+nn_init (int ncols, double **W1, double **W2, double *W3, double *b1, double *b2, double b3){ //initializing weights (standard Xavier http://proceedings.mlr.press/v9/glorot10a/glorot10a.pdf)
+    double	stdv;
+    srand(0);
+    stdv = 1 / sqrt(ncols);
+    for (int i = 0; i < WIDTH_1; ++i)
+        for (int j = 0; j < ncols; ++j){
+            W1[i][j] = (stdv + stdv)*(rand()/(double)RAND_MAX) - stdv;
+    }
+    for (int i = 0; i < WIDTH_1; ++i)
+        b1[i] = (stdv + stdv)*(rand()/(double)RAND_MAX) - stdv;
+    stdv = 1 / sqrt(WIDTH_1);
+    for (int i = 0; i < WIDTH_2; ++i)
+        for (int j = 0; j < WIDTH_1; ++j){
+            W2[i][j] = (stdv + stdv)*(rand()/(double)RAND_MAX) - stdv;
+    }
+    for (int i = 0; i < WIDTH_2; ++i)
+        b2[i] = (stdv + stdv)*(rand()/(double)RAND_MAX) - stdv;
+    stdv = 1 / sqrt(WIDTH_2);
+    for (int i = 0; i < WIDTH_2; ++i)
+        W3[i] = (stdv + stdv)*(rand()/(double)RAND_MAX) - stdv;
+    b3 = (stdv + stdv)*(rand()/(double)RAND_MAX) - stdv;
 }
 
 /*
- * Creates entry for new query in aqo_queries table with given fields.
- * Returns false if the operation failed, true otherwise.
+ * This is the critical section: only one runner is allowed to be inside this
+ * function for one feature subspace.
+ * matrix and targets are just preallocated memory for computations.
  */
-bool
-add_query(int query_hash, bool learn_aqo, bool use_aqo,
-		  int fspace_hash, bool auto_tuning)
+static void 
+atomic_fss_learn_step(int fss_hash,
+					  double **W1, double **W2, double *W3, double *b1, double *b2, double b3,
+					  double *features, double target,
+					  int nfeatures, int nrels, int *rels, int *sorted_clauses)
 {
-	RangeVar   *aqo_queries_table_rv;
-	Relation	aqo_queries_heap;
-	HeapTuple	tuple;
-
-	LOCKMODE	lockmode = RowExclusiveLock;
-
-	Datum		values[5];
-	bool		nulls[5] = {false, false, false, false, false};
-
-	Relation	query_index_rel;
-	Oid			query_index_rel_oid;
-
-	values[0] = Int32GetDatum(query_hash);
-	values[1] = BoolGetDatum(learn_aqo);
-	values[2] = BoolGetDatum(use_aqo);
-	values[3] = Int32GetDatum(fspace_hash);
-	values[4] = BoolGetDatum(auto_tuning);
-
-	query_index_rel_oid = RelnameGetRelid("aqo_queries_query_hash_idx");
-	if (!OidIsValid(query_index_rel_oid))
-	{
-		disable_aqo_for_query();
-		return false;
+	int	*hashes;
+	int ncols;
+	int	*hshes, *new_hashes;
+	double *feats, *fs;
+	int i,j,tmp,to_add;
+	double	**new_W1;
+	double stdv;
+	if (!load_fss(fss_hash, &ncols, &hashes, W1, W2, W3, b1, b2, b3)){
+		for (i = 0; i < WIDTH_1; ++i)
+			W1[i] = palloc(sizeof(double) * (nfeatures+nrels));
+		nn_init ((nfeatures+nrels), W1, W2, W3, b1, b2, b3);
+		hashes = palloc0(sizeof(*hashes) * (nfeatures+nrels));
+		feats = palloc0(sizeof(*feats) * (nfeatures+nrels));
+		for (i=0;i<nfeatures;i++){
+			hashes[i] = sorted_clauses[i];
+			feats[i] = features[i];
+		}
+		for (i=0;i<nrels;i++){
+			hashes[nfeatures+i] = rels[i];
+			feats[nfeatures+i] = 1;
+		}
+		neural_learn((nfeatures+nrels), W1, b1, W2, b2, W3, b3, feats, target);
+		update_fss(fss_hash, (nfeatures+nrels), W1, W2, W3, b1, b2, b3, hashes);
+		if ((nfeatures+nrels) > 0)
+			for (i = 0; i < WIDTH_1; ++i)
+				pfree(W1[i]);
+		pfree(W1);
+		pfree(hashes);
+		pfree(feats);
 	}
-	query_index_rel = index_open(query_index_rel_oid, lockmode);
+	else{
+		hshes = palloc0(sizeof(*hshes) * (nfeatures+nrels));
+		fs = palloc0(sizeof(*fs) * (nfeatures+nrels));
+		for (i=0;i<nfeatures;i++){
+			hshes[i] = sorted_clauses[i];
+			fs[i] = features[i];
+		}
+		for (i=0;i<nrels;i++){
+			hshes[i+nfeatures] = rels[i];
+			fs[nfeatures+i] = 1;
+		}
+		feats = palloc0(sizeof(*feats) * (ncols+nfeatures+nrels));
+		new_hashes = palloc0(sizeof(*new_hashes) * (ncols+nfeatures+nrels));
+		for (i=0;i<ncols;i++)
+			new_hashes[i] = hashes[i];
+		to_add=0;
+		for (i=0;i<(nfeatures+nrels);i++){
+			tmp = i;
+			for (j=0;j<ncols;j++){
+				if(hashes[j]==hshes[i]){
+					feats[j]=fs[i];
+					++tmp;
+					break;
+				}
+			}
+			if (tmp==i){
+				new_hashes[ncols+to_add]=hshes[i];
+				feats[ncols+to_add]=fs[i];
+				++to_add;
+			}
+		}
+		feats = repalloc(feats, (ncols+to_add) * sizeof(*feats));
+		new_W1 = (double**)palloc0(sizeof(double*) * WIDTH_1);
+		srand(1);
+		stdv = 1 / sqrt(ncols+to_add);
+		for (i = 0; i < WIDTH_1; ++i)
+			new_W1[i] = palloc0(sizeof(**new_W1) * (ncols+to_add));
+		for (j = 0; j < (ncols+to_add); ++j){
+			for (i = 0; i < WIDTH_1; ++i){
+				new_W1[i][j] = (stdv + stdv)*(rand()/(double)RAND_MAX) - stdv;
+			}
+		}
+		for (i = 0; i < WIDTH_1; ++i){
+			for (j = 0; j < ncols; ++j){
+				new_W1[i][j] = W1[i][j];
+			}
+		}
+		neural_learn((ncols+to_add), new_W1, b1, W2, b2, W3, b3, feats, target);
+		update_fss(fss_hash, (ncols+to_add), new_W1, W2, W3, b1, b2, b3, new_hashes);
 
-	aqo_queries_table_rv = makeRangeVar("public", "aqo_queries", -1);
-	aqo_queries_heap = table_openrv(aqo_queries_table_rv, lockmode);
-
-	tuple = heap_form_tuple(RelationGetDescr(aqo_queries_heap),
-							values, nulls);
-	PG_TRY();
-	{
-		simple_heap_insert(aqo_queries_heap, tuple);
-		my_index_insert(query_index_rel,
-						values, nulls,
-						&(tuple->t_self),
-						aqo_queries_heap,
-						UNIQUE_CHECK_YES);
+		if (ncols > 0)
+			for (i = 0; i < WIDTH_1; ++i)
+				pfree(W1[i]);
+		if ((ncols+to_add) > 0)
+			for (i = 0; i < WIDTH_1; ++i)
+				pfree(new_W1[i]);
+		pfree(W1);
+		pfree(new_W1);
+		pfree(hshes);
+		pfree(hashes);
+		pfree(fs);
+		pfree(feats);
+		pfree(new_hashes);
 	}
-	PG_CATCH();
-	{
-		/*
-		 * Main goal is to catch deadlock errors during the index insertion.
-		 */
-		CommandCounterIncrement();
-		simple_heap_delete(aqo_queries_heap, &(tuple->t_self));
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-
-	index_close(query_index_rel, lockmode);
-	table_close(aqo_queries_heap, lockmode);
-
-	CommandCounterIncrement();
-
-	return true;
-}
-
-bool
-update_query(int query_hash, bool learn_aqo, bool use_aqo,
-			 int fspace_hash, bool auto_tuning)
-{
-	RangeVar   *aqo_queries_table_rv;
-	Relation	aqo_queries_heap;
-	HeapTuple	tuple,
-				nw_tuple;
-
-	TupleTableSlot *slot;
-	bool		shouldFree;
-	bool		find_ok = false;
-	bool		update_indexes;
-
-	LOCKMODE	lockmode = RowExclusiveLock;
-
-	Relation	query_index_rel;
-	Oid			query_index_rel_oid;
-	IndexScanDesc query_index_scan;
-	ScanKeyData key;
-
-	Datum		values[5];
-	bool		isnull[5] = { false, false, false, false, false };
-	bool		replace[5] = { false, true, true, true, true };
-
-	query_index_rel_oid = RelnameGetRelid("aqo_queries_query_hash_idx");
-	if (!OidIsValid(query_index_rel_oid))
-	{
-		disable_aqo_for_query();
-		return false;
-	}
-
-	aqo_queries_table_rv = makeRangeVar("public", "aqo_queries", -1);
-	aqo_queries_heap = table_openrv(aqo_queries_table_rv, lockmode);
-
-	query_index_rel = index_open(query_index_rel_oid, lockmode);
-	query_index_scan = index_beginscan(aqo_queries_heap,
-									   query_index_rel,
-									   SnapshotSelf,
-									   1,
-									   0);
-
-	ScanKeyInit(&key,
-				1,
-				BTEqualStrategyNumber,
-				F_INT4EQ,
-				Int32GetDatum(query_hash));
-
-	index_rescan(query_index_scan, &key, 1, NULL, 0);
-	slot = MakeSingleTupleTableSlot(query_index_scan->heapRelation->rd_att,
-														&TTSOpsBufferHeapTuple);
-	find_ok = index_getnext_slot(query_index_scan, ForwardScanDirection, slot);
-	Assert(find_ok);
-	tuple = ExecFetchSlotHeapTuple(slot, true, &shouldFree);
-	Assert(shouldFree != true);
-
-	heap_deform_tuple(tuple, aqo_queries_heap->rd_att,
-					  values, isnull);
-
-	values[1] = BoolGetDatum(learn_aqo);
-	values[2] = BoolGetDatum(use_aqo);
-	values[3] = Int32GetDatum(fspace_hash);
-	values[4] = BoolGetDatum(auto_tuning);
-
-	nw_tuple = heap_modify_tuple(tuple, aqo_queries_heap->rd_att,
-								 values, isnull, replace);
-	if (my_simple_heap_update(aqo_queries_heap, &(nw_tuple->t_self), nw_tuple,
-			&update_indexes))
-	{
-		if (update_indexes)
-			my_index_insert(query_index_rel, values, isnull,
-							&(nw_tuple->t_self),
-							aqo_queries_heap, UNIQUE_CHECK_YES);
-	}
-	else
-	{
-		/*
-		 * Ooops, somebody concurrently updated the tuple. We have to merge
-		 * our changes somehow, but now we just discard ours. We don't believe
-		 * in high probability of simultaneously finishing of two long,
-		 * complex, and important queries, so we don't loss important data.
-		 */
-	}
-
-	ExecDropSingleTupleTableSlot(slot);
-	index_endscan(query_index_scan);
-	index_close(query_index_rel, lockmode);
-	table_close(aqo_queries_heap, lockmode);
-
-	CommandCounterIncrement();
-
-	return true;
 }
 
 /*
- * Creates entry for new query in aqo_query_texts table with given fields.
- * Returns false if the operation failed, true otherwise.
+ * For given object (i. e. clauselist, selectivities, relidslist, predicted and
+ * true cardinalities) performs learning procedure.
  */
-bool
-add_query_text(int query_hash, const char *query_text)
+static void
+learn_sample(List *clauselist, List *selectivities, List *relidslist,
+			 double true_cardinality, double predicted_cardinality)
 {
-	RangeVar   *aqo_query_texts_table_rv;
-	Relation	aqo_query_texts_heap;
-	HeapTuple	tuple;
-
-	LOCKMODE	lockmode = RowExclusiveLock;
-
-	Datum		values[2];
-	bool		isnull[2] = {false, false};
-
-	Relation	query_index_rel;
-	Oid			query_index_rel_oid;
-
-	values[0] = Int32GetDatum(query_hash);
-	values[1] = CStringGetTextDatum(query_text);
-
-	query_index_rel_oid = RelnameGetRelid("aqo_query_texts_query_hash_idx");
-	if (!OidIsValid(query_index_rel_oid))
-	{
-		disable_aqo_for_query();
-		return false;
-	}
-	query_index_rel = index_open(query_index_rel_oid, lockmode);
-
-	aqo_query_texts_table_rv = makeRangeVar("public",
-											"aqo_query_texts",
-											-1);
-	aqo_query_texts_heap = table_openrv(aqo_query_texts_table_rv,
-									   lockmode);
-
-	tuple = heap_form_tuple(RelationGetDescr(aqo_query_texts_heap),
-							values, isnull);
-
-	PG_TRY();
-	{
-		simple_heap_insert(aqo_query_texts_heap, tuple);
-		my_index_insert(query_index_rel,
-						values, isnull,
-						&(tuple->t_self),
-						aqo_query_texts_heap,
-						UNIQUE_CHECK_YES);
-	}
-	PG_CATCH();
-	{
-		CommandCounterIncrement();
-		simple_heap_delete(aqo_query_texts_heap, &(tuple->t_self));
-		index_close(query_index_rel, lockmode);
-		table_close(aqo_query_texts_heap, lockmode);
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-
-	index_close(query_index_rel, lockmode);
-	table_close(aqo_query_texts_heap, lockmode);
-
-	CommandCounterIncrement();
-
-	return true;
-}
+	int			fss_hash;
+	int			nfeatures;
+	int	   nrels;
+	double	**W1;
+	double	**W2;
+	double	*W3;
+	double	*b1;
+	double	*b2;
+	double	b3 = 0;
+	double	   *features;
+	double		target;
+	int	*rels;
+	int	*sorted_clauses;
+	int			i;
+	W1 = (double**) palloc(sizeof(double*) * WIDTH_1);
+	W2 = (double**) palloc(sizeof(double*) * WIDTH_2);
+	W3 = palloc(sizeof(*W3) * WIDTH_2);
+	b1 = palloc(sizeof(*b1) * WIDTH_1);
+	b2 = palloc(sizeof(*b2) * WIDTH_2);
 
 /*
- * Loads feature subspace (fss) from table aqo_data into memory.
- * The last column of the returned matrix is for target values of objects.
- * Returns false if the operation failed, true otherwise.
- *
- * 'fss_hash' is the hash of feature subspace which is supposed to be loaded
- * 'ncols' is the number of clauses in the feature subspace
- * 'matrix' is an allocated memory for matrix with the size of aqo_K rows
- *			and nhashes columns
- * 'targets' is an allocated memory with size aqo_K for target values
- *			of the objects
- * 'rows' is the pointer in which the function stores actual number of
- *			objects in the given feature space
- */
-bool
-load_fss(int fss_hash, int *ncols, int **hashes, double **W1, double **W2, double *W3, double *b1, double *b2, double b3)
-{
-	RangeVar   *aqo_data_table_rv;
-	Relation	aqo_data_heap;
-	HeapTuple	tuple;
-	TupleTableSlot *slot;
-	bool		shouldFree;
-	bool		find_ok = false;
-
-	Relation	data_index_rel;
-	Oid			data_index_rel_oid;
-	IndexScanDesc data_index_scan;
-	ScanKeyData	key[2];
-
-	LOCKMODE	lockmode = AccessShareLock;
-
-	Datum		values[10];
-	bool		isnull[10];
-
-	bool		success = true;
-	int widthh_1, widthh_2;
-
-	widthh_1 = WIDTH_1;
-	widthh_2 = WIDTH_2;
-	data_index_rel_oid = RelnameGetRelid("aqo_fss_access_idx");
-	if (!OidIsValid(data_index_rel_oid))
+ * Suppress the optimization for debug purposes.
+	if (fabs(log(predicted_cardinality) - log(true_cardinality)) <
+		object_selection_prediction_threshold)
 	{
-		disable_aqo_for_query();
-		return false;
-	}
-
-	aqo_data_table_rv = makeRangeVar("public", "aqo_data", -1);
-	aqo_data_heap = table_openrv(aqo_data_table_rv, lockmode);
-
-	data_index_rel = index_open(data_index_rel_oid, lockmode);
-	data_index_scan = index_beginscan(aqo_data_heap,
-									  data_index_rel,
-									  SnapshotSelf,
-									  2,
-									  0);
-
-	ScanKeyInit(&key[0],
-				1,
-				BTEqualStrategyNumber,
-				F_INT4EQ,
-				Int32GetDatum(query_context.fspace_hash));
-
-	ScanKeyInit(&key[1],
-				2,
-				BTEqualStrategyNumber,
-				F_INT4EQ,
-				Int32GetDatum(fss_hash));
-
-	index_rescan(data_index_scan, key, 2, NULL, 0);
-
-	slot = MakeSingleTupleTableSlot(data_index_scan->heapRelation->rd_att,
-														&TTSOpsBufferHeapTuple);
-	find_ok = index_getnext_slot(data_index_scan, ForwardScanDirection, slot);
-
-	if (find_ok)
-	{
-		tuple = ExecFetchSlotHeapTuple(slot, true, &shouldFree);
-		Assert(shouldFree != true);
-		heap_deform_tuple(tuple, aqo_data_heap->rd_att, values, isnull);
-
-		*ncols =  DatumGetInt32(values[2]);
-
-		if (*ncols > 0)
-			for (int i = 0; i < WIDTH_1; ++i)
-				W1[i] = palloc0(sizeof(**W1) * (*ncols));
-
-		*hashes = palloc0(sizeof(**hashes) * (*ncols));
-
-		if (*ncols > 0)
-			/*
-			 * The case than an object has not any filters and selectivities
-			 */
-			deform_matrix(values[3], W1);
-				
-		deform_matrix(values[4], W2);
-		deform_vector(values[5], W3, &widthh_2);
-		deform_vector(values[6], b1, &widthh_1);
-		deform_vector(values[7], b2, &widthh_2);
-		b3 = DatumGetFloat8(values[8]);
-		deform_int_vector(values[9], (*hashes), ncols);
-	}
-	else
-		success = false;
-
-
-
-	ExecDropSingleTupleTableSlot(slot);
-	index_endscan(data_index_scan);
-	index_close(data_index_rel, lockmode);
-	table_close(aqo_data_heap, lockmode);
-
-
-
-	return success;
-}
-
-/*
- * Updates the specified line in the specified feature subspace.
- * Returns false if the operation failed, true otherwise.
- *
- * 'fss_hash' specifies the feature subspace
- * 'nrows' x 'ncols' is the shape of 'matrix'
- * 'targets' is vector of size 'nrows'
- */
-bool
-update_fss(int fss_hash, int ncols, double **W1, double **W2, double *W3, double *b1, double *b2, double b3, int *hashes)
-{
-	RangeVar   *aqo_data_table_rv;
-	Relation	aqo_data_heap;
-	TupleDesc	tuple_desc;
-	HeapTuple	tuple,
-				nw_tuple;
-
-	TupleTableSlot *slot;
-	bool		shouldFree;
-	bool		find_ok = false;
-	bool		update_indexes;
-
-	LOCKMODE	lockmode = RowExclusiveLock;
-
-	Relation	data_index_rel;
-	Oid			data_index_rel_oid;
-	IndexScanDesc data_index_scan;
-	ScanKeyData	key[2];
-
-	Datum		values[10];
-	bool		isnull[10] = { false, false, false, false, false, false, false, false, false, false };
-	bool		replace[10] = { false, true, true, true, true, true, true, true, true, true };
-
-	data_index_rel_oid = RelnameGetRelid("aqo_fss_access_idx");
-	if (!OidIsValid(data_index_rel_oid))
-	{
-		disable_aqo_for_query();
-		return false;
-	}
-
-	aqo_data_table_rv = makeRangeVar("public", "aqo_data", -1);
-	aqo_data_heap = table_openrv(aqo_data_table_rv, lockmode);
-
-	tuple_desc = RelationGetDescr(aqo_data_heap);
-
-	data_index_rel = index_open(data_index_rel_oid, lockmode);
-	data_index_scan = index_beginscan(aqo_data_heap,
-									  data_index_rel,
-									  SnapshotSelf,
-									  2,
-									  0);
-
-	ScanKeyInit(&key[0],
-				1,
-				BTEqualStrategyNumber,
-				F_INT4EQ,
-				Int32GetDatum(query_context.fspace_hash));
-
-	ScanKeyInit(&key[1],
-				2,
-				BTEqualStrategyNumber,
-				F_INT4EQ,
-				Int32GetDatum(fss_hash));
-
-	index_rescan(data_index_scan, key, 2, NULL, 0);
-
-	slot = MakeSingleTupleTableSlot(data_index_scan->heapRelation->rd_att,
-														&TTSOpsBufferHeapTuple);
-	find_ok = index_getnext_slot(data_index_scan, ForwardScanDirection, slot);
-
-	if (!find_ok)
-	{
-		values[0] = Int32GetDatum(query_context.fspace_hash);
-		values[1] = Int32GetDatum(fss_hash);
-		values[2] = Int32GetDatum(ncols);
-
-		if (ncols > 0){
-			values[3] = PointerGetDatum(form_matrix(W1, WIDTH_1, ncols));
-			values[9] = PointerGetDatum(form_int_vector(hashes, ncols));
-		}
-		else{
-			isnull[3] = true;
-			isnull[9] = true;
-		}
-
-		values[4] = PointerGetDatum(form_matrix(W2, WIDTH_2, WIDTH_1));
-		values[5] = PointerGetDatum(form_vector(W3, WIDTH_2));
-		values[6] = PointerGetDatum(form_vector(b1, WIDTH_1));
-		values[7] = PointerGetDatum(form_vector(b2, WIDTH_2));
-		values[8] = Float8GetDatum(b3);
-		tuple = heap_form_tuple(tuple_desc, values, isnull);
-		PG_TRY();
-		{
-			simple_heap_insert(aqo_data_heap, tuple);
-			my_index_insert(data_index_rel, values, isnull, &(tuple->t_self),
-							aqo_data_heap, UNIQUE_CHECK_YES);
-		}
-		PG_CATCH();
-		{
-			CommandCounterIncrement();
-			simple_heap_delete(aqo_data_heap, &(tuple->t_self));
-			PG_RE_THROW();
-		}
-		PG_END_TRY();
-	}
-	else
-	{
-		tuple = ExecFetchSlotHeapTuple(slot, true, &shouldFree);
-		Assert(shouldFree != true);
-		heap_deform_tuple(tuple, aqo_data_heap->rd_att, values, isnull);
-
-		values[2] = Int32GetDatum(ncols);
-
-		if (ncols > 0){
-			values[3] = PointerGetDatum(form_matrix(W1, WIDTH_1, ncols));
-			values[9] = PointerGetDatum(form_int_vector(hashes, ncols));
-		}
-		else{
-			isnull[3] = true;
-			isnull[9] = true;
-		}
-
-		values[4] = PointerGetDatum(form_matrix(W2, WIDTH_2, WIDTH_1));
-		values[5] = PointerGetDatum(form_vector(W3, WIDTH_2));
-		values[6] = PointerGetDatum(form_vector(b1, WIDTH_1));
-		values[7] = PointerGetDatum(form_vector(b2, WIDTH_2));
-		values[8] = Float8GetDatum(b3);
-		nw_tuple = heap_modify_tuple(tuple, tuple_desc,
-									 values, isnull, replace);
-		if (my_simple_heap_update(aqo_data_heap, &(nw_tuple->t_self), nw_tuple,
-															&update_indexes))
-		{
-			if (update_indexes)
-				my_index_insert(data_index_rel, values, isnull,
-								&(nw_tuple->t_self),
-								aqo_data_heap, UNIQUE_CHECK_YES);
-		}
-		else
-		{
-			/*
-			 * Ooops, somebody concurrently updated the tuple. We have to
-			 * merge our changes somehow, but now we just discard ours. We
-			 * don't believe in high probability of simultaneously finishing
-			 * of two long, complex, and important queries, so we don't loss
-			 * important data.
-			 */
-		}
-	}
-
-	ExecDropSingleTupleTableSlot(slot);
-	index_endscan(data_index_scan);
-	index_close(data_index_rel, lockmode);
-	table_close(aqo_data_heap, lockmode);
-
-	CommandCounterIncrement();
-
-	return true;
-}
-
-/*
- * Returns QueryStat for the given query_hash. Returns empty QueryStat if
- * no statistics is stored for the given query_hash in table aqo_query_stat.
- * Returns NULL and executes disable_aqo_for_query if aqo_query_stat
- * is not found.
- */
-QueryStat *
-get_aqo_stat(int query_hash)
-{
-	RangeVar   *aqo_stat_table_rv;
-	Relation	aqo_stat_heap;
-	HeapTuple	tuple;
-	LOCKMODE	heap_lock = AccessShareLock;
-
-	Relation	stat_index_rel;
-	Oid			stat_index_rel_oid;
-	IndexScanDesc stat_index_scan;
-	ScanKeyData key;
-	LOCKMODE	index_lock = AccessShareLock;
-
-	Datum		values[9];
-	bool		nulls[9];
-
-	QueryStat  *stat = palloc_query_stat();
-
-	TupleTableSlot *slot;
-	bool		shouldFree;
-	bool		find_ok = false;
-
-	stat_index_rel_oid = RelnameGetRelid("aqo_query_stat_idx");
-	if (!OidIsValid(stat_index_rel_oid))
-	{
-		disable_aqo_for_query();
-		return NULL;
-	}
-
-	aqo_stat_table_rv = makeRangeVar("public", "aqo_query_stat", -1);
-	aqo_stat_heap = table_openrv(aqo_stat_table_rv, heap_lock);
-
-	stat_index_rel = index_open(stat_index_rel_oid, index_lock);
-	stat_index_scan = index_beginscan(aqo_stat_heap,
-									  stat_index_rel,
-									  SnapshotSelf,
-									  1,
-									  0);
-
-	ScanKeyInit(&key,
-				1,
-				BTEqualStrategyNumber,
-				F_INT4EQ,
-				Int32GetDatum(query_hash));
-
-	index_rescan(stat_index_scan, &key, 1, NULL, 0);
-
-	slot = MakeSingleTupleTableSlot(stat_index_scan->heapRelation->rd_att,
-														&TTSOpsBufferHeapTuple);
-	find_ok = index_getnext_slot(stat_index_scan, ForwardScanDirection, slot);
-
-	if (find_ok)
-	{
-		tuple = ExecFetchSlotHeapTuple(slot, true, &shouldFree);
-		Assert(shouldFree != true);
-		heap_deform_tuple(tuple, aqo_stat_heap->rd_att, values, nulls);
-
-		DeformVectorSz(values[1], stat->execution_time_with_aqo);
-		DeformVectorSz(values[2], stat->execution_time_without_aqo);
-		DeformVectorSz(values[3], stat->planning_time_with_aqo);
-		DeformVectorSz(values[4], stat->planning_time_without_aqo);
-		DeformVectorSz(values[5], stat->cardinality_error_with_aqo);
-		DeformVectorSz(values[6], stat->cardinality_error_without_aqo);
-
-		stat->executions_with_aqo = DatumGetInt64(values[7]);
-		stat->executions_without_aqo = DatumGetInt64(values[8]);
-	}
-
-	ExecDropSingleTupleTableSlot(slot);
-	index_endscan(stat_index_scan);
-	index_close(stat_index_rel, index_lock);
-	table_close(aqo_stat_heap, heap_lock);
-
-	return stat;
-}
-
-/*
- * Saves given QueryStat for the given query_hash.
- * Executes disable_aqo_for_query if aqo_query_stat is not found.
- */
-void
-update_aqo_stat(int query_hash, QueryStat *stat)
-{
-	RangeVar   *aqo_stat_table_rv;
-	Relation	aqo_stat_heap;
-	HeapTuple	tuple,
-				nw_tuple;
-	TupleDesc	tuple_desc;
-
-	TupleTableSlot *slot;
-	bool		shouldFree;
-	bool		find_ok = false;
-	bool		update_indexes;
-
-	LOCKMODE	lockmode = RowExclusiveLock;
-
-	Relation	stat_index_rel;
-	Oid			stat_index_rel_oid;
-	IndexScanDesc stat_index_scan;
-	ScanKeyData	key;
-
-	Datum		values[9];
-	bool		isnull[9] = { false, false, false,
-							  false, false, false,
-							  false, false, false };
-	bool		replace[9] = { false, true, true,
-							    true, true, true,
-								true, true, true };
-
-	stat_index_rel_oid = RelnameGetRelid("aqo_query_stat_idx");
-	if (!OidIsValid(stat_index_rel_oid))
-	{
-		disable_aqo_for_query();
 		return;
 	}
+*/
+	target = log(true_cardinality);
 
-	aqo_stat_table_rv = makeRangeVar("public", "aqo_query_stat", -1);
-	aqo_stat_heap = table_openrv(aqo_stat_table_rv, lockmode);
+	fss_hash = get_fss_for_object(clauselist, selectivities, relidslist,
+					   &nfeatures, &nrels, &features, &rels, &sorted_clauses);
 
-	tuple_desc = RelationGetDescr(aqo_stat_heap);
+	for (i = 0; i < WIDTH_2; ++i)
+		W2[i] = palloc(sizeof(double) * WIDTH_1);
 
-	stat_index_rel = index_open(stat_index_rel_oid, lockmode);
-	stat_index_scan = index_beginscan(aqo_stat_heap,
-									  stat_index_rel,
-									  SnapshotSelf,
-									  1,
-									  0);
+	/* Here should be critical section */
+	atomic_fss_learn_step(fss_hash,
+					  W1, W2, W3, b1, b2, b3,
+					  features, target,
+					  nfeatures, nrels, rels, sorted_clauses);
+	/* Here should be the end of critical section */
 
-	ScanKeyInit(&key,
-				1,
-				BTEqualStrategyNumber,
-				F_INT4EQ,
-				Int32GetDatum(query_hash));
+	for (i = 0; i < WIDTH_2; ++i)
+		pfree(W2[i]);
+	pfree(W2);
+	pfree(W3);
+	pfree(b1);
+	pfree(b2);
+	pfree(features);
+	pfree(rels);
+	pfree(sorted_clauses);
+}
 
-	index_rescan(stat_index_scan, &key, 1, NULL, 0);
+/*
+ * For given node specified by clauselist, relidslist and join_type restores
+ * the same selectivities of clauses as were used at query optimization stage.
+ */
+List *
+restore_selectivities(List *clauselist,
+					  List *relidslist,
+					  JoinType join_type,
+					  bool was_parametrized)
+{
+	List	   *lst = NIL;
+	ListCell   *l;
+	int			i = 0;
+	bool		parametrized_sel;
+	int			nargs;
+	int		   *args_hash;
+	int		   *eclass_hash;
+	double	   *cur_sel;
+	int			cur_hash;
+	int			cur_relid;
 
-	slot = MakeSingleTupleTableSlot(stat_index_scan->heapRelation->rd_att,
-														&TTSOpsBufferHeapTuple);
-	find_ok = index_getnext_slot(stat_index_scan, ForwardScanDirection, slot);
-
-	/*values[0] will be initialized later */
-	values[1] = PointerGetDatum(FormVectorSz(stat->execution_time_with_aqo));
-	values[2] = PointerGetDatum(FormVectorSz(stat->execution_time_without_aqo));
-	values[3] = PointerGetDatum(FormVectorSz(stat->planning_time_with_aqo));
-	values[4] = PointerGetDatum(FormVectorSz(stat->planning_time_without_aqo));
-	values[5] = PointerGetDatum(FormVectorSz(stat->cardinality_error_with_aqo));
-	values[6] = PointerGetDatum(FormVectorSz(stat->cardinality_error_without_aqo));
-
-	values[7] = Int64GetDatum(stat->executions_with_aqo);
-	values[8] = Int64GetDatum(stat->executions_without_aqo);
-
-	if (!find_ok)
+	parametrized_sel = was_parametrized && (list_length(relidslist) == 1);
+	if (parametrized_sel)
 	{
-		values[0] = Int32GetDatum(query_hash);
-		tuple = heap_form_tuple(tuple_desc, values, isnull);
-		PG_TRY();
-		{
-			simple_heap_insert(aqo_stat_heap, tuple);
-			my_index_insert(stat_index_rel, values, isnull, &(tuple->t_self),
-							aqo_stat_heap, UNIQUE_CHECK_YES);
-		}
-		PG_CATCH();
-		{
-			CommandCounterIncrement();
-			simple_heap_delete(aqo_stat_heap, &(tuple->t_self));
-			PG_RE_THROW();
-		}
-		PG_END_TRY();
+		cur_relid = linitial_int(relidslist);
+		get_eclasses(clauselist, &nargs, &args_hash, &eclass_hash);
 	}
-	else
+
+	foreach(l, clauselist)
 	{
-		tuple = ExecFetchSlotHeapTuple(slot, true, &shouldFree);
-		Assert(shouldFree != true);
-		values[0] = heap_getattr(tuple, 1,
-								 RelationGetDescr(aqo_stat_heap), &isnull[0]);
-		nw_tuple = heap_modify_tuple(tuple, tuple_desc,
-													values, isnull, replace);
-		if (my_simple_heap_update(aqo_stat_heap, &(nw_tuple->t_self), nw_tuple,
-															&update_indexes))
+		RestrictInfo *rinfo = (RestrictInfo *) lfirst(l);
+
+		cur_sel = NULL;
+		if (parametrized_sel)
 		{
-			/* NOTE: insert index tuple iff heap update succeeded! */
-			if (update_indexes)
-				my_index_insert(stat_index_rel, values, isnull,
-								&(nw_tuple->t_self),
-								aqo_stat_heap, UNIQUE_CHECK_YES);
+			cur_hash = get_clause_hash(rinfo->clause, nargs,
+									   args_hash, eclass_hash);
+			cur_sel = selectivity_cache_find_global_relid(cur_hash, cur_relid);
+			if (cur_sel == NULL)
+			{
+				if (join_type == JOIN_INNER)
+					cur_sel = &rinfo->norm_selec;
+				else
+					cur_sel = &rinfo->outer_selec;
+			}
 		}
+		else if (join_type == JOIN_INNER)
+			cur_sel = &rinfo->norm_selec;
 		else
-		{
-			/*
-			 * Ooops, somebody concurrently updated the tuple. We have to
-			 * merge our changes somehow, but now we just discard ours. We
-			 * don't believe in high probability of simultaneously finishing
-			 * of two long, complex, and important queries, so we don't loss
-			 * important data.
-			 */
-		}
+			cur_sel = &rinfo->outer_selec;
+
+		lst = lappend(lst, cur_sel);
+		i++;
 	}
 
-	ExecDropSingleTupleTableSlot(slot);
-	index_endscan(stat_index_scan);
-	index_close(stat_index_rel, lockmode);
-	table_close(aqo_stat_heap, lockmode);
-
-	CommandCounterIncrement();
-}
-
-/*
- * Expands matrix from storage into simple C-array.
- */
-void
-deform_matrix(Datum datum, double **matrix)
-{
-	ArrayType  *array = DatumGetArrayTypePCopy(PG_DETOAST_DATUM(datum));
-	int			nelems;
-	Datum	   *values;
-	int			rows;
-	int			cols;
-	int			i,
-				j;
-
-	deconstruct_array(array,
-					  FLOAT8OID, 8, FLOAT8PASSBYVAL, 'd',
-					  &values, NULL, &nelems);
-	if (nelems != 0)
+	if (parametrized_sel)
 	{
-		rows = ARR_DIMS(array)[0];
-		cols = ARR_DIMS(array)[1];
-		for (i = 0; i < rows; ++i)
-			for (j = 0; j < cols; ++j)
-				matrix[i][j] = DatumGetFloat8(values[i * cols + j]);
+		pfree(args_hash);
+		pfree(eclass_hash);
 	}
-	pfree(values);
-	pfree(array);
+
+	return lst;
 }
 
 /*
- * Expands int vector from storage into simple C-array.
- * Also returns its number of elements.
- */
-void
-deform_int_vector(Datum datum, int *vector, int *nelems)
-{
-	ArrayType  *array = DatumGetArrayTypePCopy(PG_DETOAST_DATUM(datum));
-	Datum	   *values;
-	int			i;
-
-	deconstruct_array(array,
-					  INT4OID, 4, true, 'i',
-					  &values, NULL, nelems);
-	for (i = 0; i < *nelems; ++i)
-		vector[i] = DatumGetInt32(values[i]);
-	pfree(values);
-	pfree(array);
-}
-
-/*
- * Expands vector from storage into simple C-array.
- * Also returns its number of elements.
- */
-void
-deform_vector(Datum datum, double *vector, int *nelems)
-{
-	ArrayType  *array = DatumGetArrayTypePCopy(PG_DETOAST_DATUM(datum));
-	Datum	   *values;
-	int			i;
-
-	deconstruct_array(array,
-					  FLOAT8OID, 8, FLOAT8PASSBYVAL, 'd',
-					  &values, NULL, nelems);
-	for (i = 0; i < *nelems; ++i)
-		vector[i] = DatumGetFloat8(values[i]);
-	pfree(values);
-	pfree(array);
-}
-
-/*
- * Forms ArrayType object for storage from simple C-array matrix.
- */
-ArrayType *
-form_matrix(double **matrix, int nrows, int ncols)
-{
-	Datum	   *elems;
-	ArrayType  *array;
-	int			dims[2];
-	int			lbs[2];
-	int			i,
-				j;
-
-	dims[0] = nrows;
-	dims[1] = ncols;
-	lbs[0] = lbs[1] = 1;
-	elems = palloc(sizeof(*elems) * nrows * ncols);
-	for (i = 0; i < nrows; ++i)
-		for (j = 0; j < ncols; ++j)
-			elems[i * ncols + j] = Float8GetDatum(matrix[i][j]);
-
-	array = construct_md_array(elems, NULL, 2, dims, lbs,
-							   FLOAT8OID, 8, FLOAT8PASSBYVAL, 'd');
-	pfree(elems);
-	return array;
-}
-
-ArrayType *
-form_int_vector(int *vector, int nrows)
-{
-	Datum	   *elems;
-	ArrayType  *array;
-	int			dims[1];
-	int			lbs[1];
-	int			i;
-
-	dims[0] = nrows;
-	lbs[0] = 1;
-	elems = palloc(sizeof(*elems) * nrows);
-	for (i = 0; i < nrows; ++i)
-		elems[i] = Int32GetDatum(vector[i]);
-	array = construct_md_array(elems, NULL, 1, dims, lbs,
-								INT4OID, 4, true, 'i');
-	pfree(elems);
-	return array;
-}
-
-/*
- * Forms ArrayType object for storage from simple C-array vector.
- */
-ArrayType *
-form_vector(double *vector, int nrows)
-{
-	Datum	   *elems;
-	ArrayType  *array;
-	int			dims[1];
-	int			lbs[1];
-	int			i;
-
-	dims[0] = nrows;
-	lbs[0] = 1;
-	elems = palloc(sizeof(*elems) * nrows);
-	for (i = 0; i < nrows; ++i)
-		elems[i] = Float8GetDatum(vector[i]);
-	array = construct_md_array(elems, NULL, 1, dims, lbs,
-							   FLOAT8OID, 8, FLOAT8PASSBYVAL, 'd');
-	pfree(elems);
-	return array;
-}
-
-/*
- * Returns true if updated successfully, false if updated concurrently by
- * another session, error otherwise.
+ * Check for the nodes that never executed. If at least one node exists in the
+ * plan than actual rows of any another node can be false.
+ * Suppress such knowledge because it can worsen the query execution time.
  */
 static bool
-my_simple_heap_update(Relation relation, ItemPointer otid, HeapTuple tup,
-					  bool *update_indexes)
+HasNeverExecutedNodes(PlanState *ps, void *context)
 {
-	TM_Result result;
-	TM_FailureData hufd;
-	LockTupleMode lockmode;
+	Assert(context == NULL);
 
-	Assert(update_indexes != NULL);
-	result = heap_update(relation, otid, tup,
-						 GetCurrentCommandId(true), InvalidSnapshot,
-						 true /* wait for commit */ ,
-						 &hufd, &lockmode);
-	switch (result)
+	InstrEndLoop(ps->instrument);
+	if (ps->instrument == NULL || ps->instrument->nloops == 0)
+		return true;
+
+	return planstate_tree_walker(ps, HasNeverExecutedNodes, NULL);
+}
+/*
+ * Walks over obtained PlanState tree, collects relation objects with their
+ * clauses, selectivities and relids and passes each object to learn_sample.
+ *
+ * Returns clauselist, selectivities and relids.
+ * Store observed subPlans into other_plans list.
+ *
+ * We use list_copy() of p->plan->path_clauses and p->plan->path_relids
+ * because the plan may be stored in the cache after this. Operation
+ * list_concat() changes input lists and may destruct cached plan.
+ */
+static bool
+learnOnPlanState(PlanState *p, void *context)
+{
+	aqo_obj_stat *ctx = (aqo_obj_stat *) context;
+	aqo_obj_stat SubplanCtx = {NIL, NIL, NIL, ctx->learn};
+
+	planstate_tree_walker(p, learnOnPlanState, (void *) &SubplanCtx);
+
+	/*
+	 * Some nodes inserts after planning step (See T_Hash node type).
+	 * In this case we have'nt AQO prediction and fss record.
+	 */
+	if (p->plan->had_path)
 	{
-		case TM_SelfModified:
-			/* Tuple was already updated in current command? */
-			elog(ERROR, "tuple already updated by self");
-			break;
+		List *cur_selectivities;
 
-		case TM_Ok:
-			/* done successfully */
-			if (!HeapTupleIsHeapOnly(tup))
-				*update_indexes = true;
+		cur_selectivities = restore_selectivities(p->plan->path_clauses,
+												  p->plan->path_relids,
+												  p->plan->path_jointype,
+												  p->plan->was_parametrized);
+		SubplanCtx.selectivities = list_concat(SubplanCtx.selectivities,
+															cur_selectivities);
+		SubplanCtx.clauselist = list_concat(SubplanCtx.clauselist,
+											list_copy(p->plan->path_clauses));
+
+		if (p->plan->path_relids != NIL)
+			/*
+			 * This plan can be stored as cached plan. In the case we will have
+			 * bogus path_relids field (changed by list_concat routine) at the
+			 * next usage (and aqo-learn) of this plan.
+			 */
+			ctx->relidslist = list_copy(p->plan->path_relids);
+
+		if (p->instrument && (p->righttree != NULL || p->lefttree == NULL ||
+							  p->plan->path_clauses != NIL))
+		{
+			double learn_rows = 0.;
+			double predicted = 0.;
+
+			if (p->instrument->nloops > 0.)
+			{
+				/* If we can strongly calculate produced rows, do it. */
+				if (p->worker_instrument && IsParallelTuplesProcessing(p->plan))
+				{
+					double wnloops = 0.;
+					double wntuples = 0.;
+					int i;
+
+					for (i = 0; i < p->worker_instrument->num_workers; i++)
+					{
+						double t = p->worker_instrument->instrument[i].ntuples;
+						double l = p->worker_instrument->instrument[i].nloops;
+
+						if (l <= 0)
+							continue;
+
+						wntuples += t;
+						wnloops += l;
+						learn_rows += t/l;
+					}
+
+					Assert(p->instrument->nloops >= wnloops);
+					Assert(p->instrument->ntuples >= wntuples);
+					if (p->instrument->nloops - wnloops > 0.5)
+						learn_rows += (p->instrument->ntuples - wntuples) /
+											(p->instrument->nloops - wnloops);
+				}
+				else
+					/* This node does not required to sum tuples of each worker
+					 * to calculate produced rows.  */
+					learn_rows = p->instrument->ntuples / p->instrument->nloops;
+
+				if (p->plan->predicted_cardinality > 0.)
+					predicted = p->plan->predicted_cardinality;
+				else if (IsParallelTuplesProcessing(p->plan))
+					predicted = p->plan->plan_rows *
+						get_parallel_divisor(p->plan->path_parallel_workers);
+				else
+					predicted = p->plan->plan_rows;
+
+				/* It is needed for correct exp(result) calculation. */
+				predicted = clamp_row_est(predicted);
+				learn_rows = clamp_row_est(learn_rows);
+			}
 			else
-				*update_indexes = false;
-			return true;
+			{
+				/*
+				 * LAV: I found two cases for this code:
+				 * 1. if query returns with error.
+				 * 2. plan node has never visited.
+				 * Both cases can't be used to learning AQO because give an
+				 * incorrect number of rows.
+				 */
+				elog(PANIC, "AQO: impossible situation");
+			}
 
-		case TM_Updated:
-			return false;
-			break;
+			Assert(predicted >= 1 && learn_rows >= 1);
+			cardinality_sum_errors += fabs(log(predicted) - log(learn_rows));
+			cardinality_num_objects += 1;
 
-		case TM_BeingModified:
-			return false;
-			break;
+			/*
+			 * A subtree was not visited. In this case we can not teach AQO
+			 * because ntuples value is equal to 0 and we will got
+			 * learn rows == 1.
+			 * It is false knowledge: at another place of a plan, scanning of
+			 * the node may produce many tuples.
+			 */
+			Assert(p->instrument->nloops >= 1);
 
-		default:
-			elog(ERROR, "unrecognized heap_update status: %u", result);
-			break;
+			if (ctx->learn)
+				learn_sample(SubplanCtx.clauselist, SubplanCtx.selectivities,
+								p->plan->path_relids, learn_rows, predicted);
+		}
 	}
+
+	ctx->clauselist = list_concat(ctx->clauselist, SubplanCtx.clauselist);
+	ctx->selectivities = list_concat(ctx->selectivities,
+												SubplanCtx.selectivities);
 	return false;
 }
 
+/*
+ * Updates given row of query statistics.
+ */
+void
+update_query_stat_row(double *et, int *et_size,
+					  double *pt, int *pt_size,
+					  double *ce, int *ce_size,
+					  double planning_time,
+					  double execution_time,
+					  double cardinality_error,
+					  int64 *n_exec)
+{
+	int i;
 
-/* Provides correct insert in both PostgreQL 9.6.X and 10.X.X */
+	/*
+	 * If plan contains one or more "never visited" nodes, cardinality_error
+	 * have -1 value and will be written to the knowledge base. User can use it
+	 * as a sign that AQO ignores this query.
+	 */
+	if (*ce_size >= aqo_stat_size)
+			for (i = 1; i < aqo_stat_size; ++i)
+				ce[i - 1] = ce[i];
+		*ce_size = (*ce_size >= aqo_stat_size) ? aqo_stat_size : (*ce_size + 1);
+		ce[*ce_size - 1] = cardinality_error;
+
+	if (*et_size >= aqo_stat_size)
+		for (i = 1; i < aqo_stat_size; ++i)
+			et[i - 1] = et[i];
+
+	*et_size = (*et_size >= aqo_stat_size) ? aqo_stat_size : (*et_size + 1);
+	et[*et_size - 1] = execution_time;
+
+	if (*pt_size >= aqo_stat_size)
+		for (i = 1; i < aqo_stat_size; ++i)
+			pt[i - 1] = pt[i];
+
+	*pt_size = (*pt_size >= aqo_stat_size) ? aqo_stat_size : (*pt_size + 1);
+	pt[*pt_size - 1] = planning_time;
+	(*n_exec)++;
+}
+
+/*****************************************************************************
+ *
+ *	QUERY EXECUTION STATISTICS COLLECTING HOOKS
+ *
+ *****************************************************************************/
+
+/*
+ * Set up flags to store cardinality statistics.
+ */
+void
+aqo_ExecutorStart(QueryDesc *queryDesc, int eflags)
+{
+	instr_time	current_time;
+	bool use_aqo;
+
+	use_aqo = !IsParallelWorker() && (query_context.use_aqo ||
+								query_context.learn_aqo || force_collect_stat);
+
+	if (use_aqo)
+	{
+		INSTR_TIME_SET_CURRENT(current_time);
+		INSTR_TIME_SUBTRACT(current_time, query_context.query_starttime);
+		query_context.query_planning_time = INSTR_TIME_GET_DOUBLE(current_time);
+
+		query_context.explain_only = ((eflags & EXEC_FLAG_EXPLAIN_ONLY) != 0);
+
+		if ((query_context.learn_aqo || force_collect_stat) &&
+			!query_context.explain_only)
+			queryDesc->instrument_options |= INSTRUMENT_ROWS;
+
+		/* Save all query-related parameters into the query context. */
+		StoreToQueryContext(queryDesc);
+	}
+
+	if (prev_ExecutorStart_hook)
+		prev_ExecutorStart_hook(queryDesc, eflags);
+	else
+		standard_ExecutorStart(queryDesc, eflags);
+
+	/* Plan state has initialized */
+	if (use_aqo)
+		StorePlanInternals(queryDesc);
+}
+
+/*
+ * General hook which runs before ExecutorEnd and collects query execution
+ * cardinality statistics.
+ * Also it updates query execution statistics in aqo_query_stat.
+ */
+void
+aqo_ExecutorEnd(QueryDesc *queryDesc)
+{
+	double totaltime;
+	double cardinality_error;
+	QueryStat *stat = NULL;
+	instr_time endtime;
+	EphemeralNamedRelation enr = get_ENR(queryDesc->queryEnv, PlanStateInfo);
+
+	cardinality_sum_errors = 0.;
+	cardinality_num_objects = 0;
+
+	if (!ExtractFromQueryContext(queryDesc))
+		/* AQO keep all query-related preferences at the query context.
+		 * It is needed to prevent from possible recursive changes, at
+		 * preprocessing stage of subqueries.
+		 * If context not exist we assume AQO was disabled at preprocessing
+		 * stage for this query.
+		 */
+		goto end;
+
+	njoins = (enr != NULL) ? *(int *) enr->reldata : -1;
+
+	Assert(!IsParallelWorker());
+
+	if (query_context.explain_only)
+	{
+		query_context.learn_aqo = false;
+		query_context.collect_stat = false;
+	}
+
+	if ((query_context.learn_aqo || query_context.collect_stat) &&
+		!HasNeverExecutedNodes(queryDesc->planstate, NULL))
+	{
+		aqo_obj_stat ctx = {NIL, NIL, NIL, query_context.learn_aqo};
+
+		learnOnPlanState(queryDesc->planstate, (void *) &ctx);
+		list_free(ctx.clauselist);
+		list_free(ctx.relidslist);
+		list_free(ctx.selectivities);
+	}
+
+	if (query_context.collect_stat)
+	{
+		INSTR_TIME_SET_CURRENT(endtime);
+		INSTR_TIME_SUBTRACT(endtime, query_context.query_starttime);
+		totaltime = INSTR_TIME_GET_DOUBLE(endtime);
+		if (cardinality_num_objects > 0)
+			cardinality_error = cardinality_sum_errors / cardinality_num_objects;
+		else
+			cardinality_error = -1;
+
+		stat = get_aqo_stat(query_context.query_hash);
+
+		if (stat != NULL)
+		{
+			if (query_context.use_aqo)
+				update_query_stat_row(stat->execution_time_with_aqo,
+									  &stat->execution_time_with_aqo_size,
+									  stat->planning_time_with_aqo,
+									  &stat->planning_time_with_aqo_size,
+									  stat->cardinality_error_with_aqo,
+									  &stat->cardinality_error_with_aqo_size,
+									  query_context.query_planning_time,
+									  totaltime - query_context.query_planning_time,
+									  cardinality_error,
+									  &stat->executions_with_aqo);
+			else
+				update_query_stat_row(stat->execution_time_without_aqo,
+									  &stat->execution_time_without_aqo_size,
+									  stat->planning_time_without_aqo,
+									  &stat->planning_time_without_aqo_size,
+									  stat->cardinality_error_without_aqo,
+									  &stat->cardinality_error_without_aqo_size,
+									  query_context.query_planning_time,
+									  totaltime - query_context.query_planning_time,
+									  cardinality_error,
+									  &stat->executions_without_aqo);
+		}
+	}
+	selectivity_cache_clear();
+
+	/*
+	 * Store all learn data into the AQO service relations.
+	 */
+	if ((query_context.collect_stat) && (stat != NULL))
+	{
+		if (!query_context.adding_query && query_context.auto_tuning)
+			automatical_query_tuning(query_context.query_hash, stat);
+
+		update_aqo_stat(query_context.fspace_hash, stat);
+		pfree_query_stat(stat);
+	}
+	RemoveFromQueryContext(queryDesc);
+
+end:
+	if (prev_ExecutorEnd_hook)
+		prev_ExecutorEnd_hook(queryDesc);
+	else
+		standard_ExecutorEnd(queryDesc);
+
+	/*
+	 * standard_ExecutorEnd clears the queryDesc->planstate. After this point no
+	 * one operation with the plan can be made.
+	 */
+}
+
+/*
+ * Converts path info into plan node for collecting it after query execution.
+ */
+void
+aqo_copy_generic_path_info(PlannerInfo *root, Plan *dest, Path *src)
+{
+	bool		is_join_path;
+
+	if (prev_copy_generic_path_info_hook)
+		prev_copy_generic_path_info_hook(root, dest, src);
+
+	is_join_path = (src->type == T_NestPath || src->type == T_MergePath ||
+					src->type == T_HashPath);
+
+	if (dest->had_path)
+	{
+		/*
+		 * The convention is that any extension that sets had_path is also
+		 * responsible for setting path_clauses, path_jointype, path_relids,
+		 * path_parallel_workers, and was_parameterized.
+		 */
+		Assert(dest->path_clauses && dest->path_jointype &&
+			   dest->path_relids && dest->path_parallel_workers);
+		return;
+	}
+
+	if (is_join_path)
+	{
+		dest->path_clauses = ((JoinPath *) src)->joinrestrictinfo;
+		dest->path_jointype = ((JoinPath *) src)->jointype;
+	}
+	else
+	{
+		dest->path_clauses = list_concat(
+									list_copy(src->parent->baserestrictinfo),
+						 src->param_info ? src->param_info->ppi_clauses : NIL);
+		dest->path_jointype = JOIN_INNER;
+	}
+
+	dest->path_relids = get_list_of_relids(root, src->parent->relids);
+	dest->path_parallel_workers = src->parallel_workers;
+	dest->was_parametrized = (src->param_info != NULL);
+
+	if (src->param_info)
+	{
+		dest->predicted_cardinality = src->param_info->predicted_ppi_rows;
+		dest->fss_hash = src->param_info->fss_ppi_hash;
+	}
+	else
+	{
+		dest->predicted_cardinality = src->parent->predicted_cardinality;
+		dest->fss_hash = src->parent->fss_hash;
+	}
+
+	dest->had_path = true;
+}
+
+/*
+ * Store into query environment field AQO data related to the query.
+ * We introduce this machinery to avoid problems with subqueries, induced by
+ * top-level query.
+ */
+static void
+StoreToQueryContext(QueryDesc *queryDesc)
+{
+	EphemeralNamedRelation	enr;
+	int	qcsize = sizeof(QueryContextData);
+	MemoryContext	oldCxt;
+
+	oldCxt = MemoryContextSwitchTo(AQOMemoryContext);
+	enr = palloc0(sizeof(EphemeralNamedRelationData));
+	if (queryDesc->queryEnv == NULL)
+		queryDesc->queryEnv = create_queryEnv();
+
+	enr->md.name = AQOPrivateData;
+	enr->md.enrtuples = 0;
+	enr->md.enrtype = 0;
+	enr->md.reliddesc = InvalidOid;
+	enr->md.tupdesc = NULL;
+
+	enr->reldata = palloc0(qcsize);
+	memcpy(enr->reldata, &query_context, qcsize);
+
+	register_ENR(queryDesc->queryEnv, enr);
+	MemoryContextSwitchTo(oldCxt);
+}
+
 static bool
-my_index_insert(Relation indexRelation,
-				Datum *values, bool *isnull,
-				ItemPointer heap_t_ctid,
-				Relation heapRelation,
-				IndexUniqueCheck checkUnique)
+calculateJoinNum(PlanState *ps, void *context)
 {
-	/* Index must be UNIQUE to support uniqueness checks */
-	Assert(checkUnique == UNIQUE_CHECK_NO ||
-		   indexRelation->rd_index->indisunique);
+	int *njoins_ptr = (int *) context;
 
-#if PG_VERSION_NUM < 100000
-	return index_insert(indexRelation, values, isnull, heap_t_ctid,
-						heapRelation, checkUnique);
-#else
-	return index_insert(indexRelation, values, isnull, heap_t_ctid,
-						heapRelation, checkUnique,
-						BuildIndexInfo(indexRelation));
+	planstate_tree_walker(ps, calculateJoinNum, context);
+
+	if (nodeTag(ps->plan) == T_NestLoop ||
+		nodeTag(ps->plan) == T_MergeJoin ||
+		nodeTag(ps->plan) == T_HashJoin)
+		(*njoins_ptr)++;
+
+	return false;
+}
+
+static void
+StorePlanInternals(QueryDesc *queryDesc)
+{
+	EphemeralNamedRelation enr;
+	MemoryContext	oldCxt;
+
+	njoins = 0;
+	planstate_tree_walker(queryDesc->planstate, calculateJoinNum, &njoins);
+
+	oldCxt = MemoryContextSwitchTo(AQOMemoryContext);
+	enr = palloc0(sizeof(EphemeralNamedRelationData));
+	if (queryDesc->queryEnv == NULL)
+			queryDesc->queryEnv = create_queryEnv();
+
+	enr->md.name = PlanStateInfo;
+	enr->md.enrtuples = 0;
+	enr->md.enrtype = 0;
+	enr->md.reliddesc = InvalidOid;
+	enr->md.tupdesc = NULL;
+	enr->reldata = palloc0(sizeof(int));
+	memcpy(enr->reldata, &njoins, sizeof(int));
+	register_ENR(queryDesc->queryEnv, enr);
+	MemoryContextSwitchTo(oldCxt);
+}
+
+/*
+ * Restore AQO data, related to the query.
+ */
+static bool
+ExtractFromQueryContext(QueryDesc *queryDesc)
+{
+	EphemeralNamedRelation	enr;
+
+	/* This is a very rare case when we don't load aqo as shared library during
+	 * startup perform 'CREATE EXTENSION aqo' command in the backend and first
+	 * query in any another backend is 'UPDATE aqo_queries...'. In this case
+	 * ExecutorEnd hook will be executed without ExecutorStart hook.
+	 */
+	if (queryDesc->queryEnv == NULL)
+		return false;
+
+	enr = get_ENR(queryDesc->queryEnv, AQOPrivateData);
+
+	if (enr == NULL)
+		return false;
+
+	memcpy(&query_context, enr->reldata, sizeof(QueryContextData));
+
+	return true;
+}
+
+static void
+RemoveFromQueryContext(QueryDesc *queryDesc)
+{
+	EphemeralNamedRelation enr = get_ENR(queryDesc->queryEnv, AQOPrivateData);
+	unregister_ENR(queryDesc->queryEnv, AQOPrivateData);
+	pfree(enr->reldata);
+	pfree(enr);
+
+	/* Remove the plan state internals */
+	enr = get_ENR(queryDesc->queryEnv, PlanStateInfo);
+	unregister_ENR(queryDesc->queryEnv, PlanStateInfo);
+	pfree(enr->reldata);
+	pfree(enr);
+}
+
+/*
+ * Prints if the plan was constructed with AQO.
+ */
+void print_into_explain(PlannedStmt *plannedstmt, IntoClause *into,
+			   ExplainState *es, const char *queryString,
+			   ParamListInfo params, const instr_time *planduration,
+			   QueryEnvironment *queryEnv)
+{
+	if (prev_ExplainOnePlan_hook)
+		prev_ExplainOnePlan_hook(plannedstmt, into, es, queryString,
+								params, planduration, queryEnv);
+
+#ifdef AQO_EXPLAIN
+	/* Report to user about aqo state only in verbose mode */
+	if (es->verbose)
+	{
+		ExplainPropertyBool("Using aqo", query_context.use_aqo, es);
+
+		switch (aqo_mode)
+		{
+		case AQO_MODE_INTELLIGENT:
+			ExplainPropertyText("AQO mode", "INTELLIGENT", es);
+			break;
+		case AQO_MODE_FORCED:
+			ExplainPropertyText("AQO mode", "FORCED", es);
+			break;
+		case AQO_MODE_CONTROLLED:
+			ExplainPropertyText("AQO mode", "CONTROLLED", es);
+			break;
+		case AQO_MODE_LEARN:
+			ExplainPropertyText("AQO mode", "LEARN", es);
+			break;
+		case AQO_MODE_FROZEN:
+			ExplainPropertyText("AQO mode", "FROZEN", es);
+			break;
+		case AQO_MODE_DISABLED:
+			ExplainPropertyText("AQO mode", "DISABLED", es);
+			break;
+		default:
+			elog(ERROR, "Bad AQO state");
+			break;
+		}
+
+		/*
+		 * Query hash provides an user the conveniently use of the AQO
+		 * auxiliary functions.
+		 */
+		if (aqo_mode != AQO_MODE_DISABLED || force_collect_stat)
+		{
+			ExplainPropertyInteger("Query hash", NULL,
+												query_context.query_hash, es);
+			ExplainPropertyInteger("JOINS", NULL, njoins, es);
+		}
+	}
 #endif
-}
-
-/* Creates a storage for hashes of deactivated queries */
-void
-init_deactivated_queries_storage(void)
-{
-	HASHCTL		hash_ctl;
-
-	/* Create the hashtable proper */
-	MemSet(&hash_ctl, 0, sizeof(hash_ctl));
-	hash_ctl.keysize = sizeof(int);
-	hash_ctl.entrysize = sizeof(int);
-	deactivated_queries = hash_create("aqo_deactivated_queries",
-									  128,		/* start small and extend */
-									  &hash_ctl,
-									  HASH_ELEM | HASH_BLOBS);
-}
-
-/* Destroys the storage for hash of deactivated queries */
-void
-fini_deactivated_queries_storage(void)
-{
-	hash_destroy(deactivated_queries);
-	deactivated_queries = NULL;
-}
-
-/* Checks whether the query with given hash is deactivated */
-bool
-query_is_deactivated(int query_hash)
-{
-	bool		found;
-
-	hash_search(deactivated_queries, &query_hash, HASH_FIND, &found);
-	return found;
-}
-
-/* Adds given query hash into the set of hashes of deactivated queries*/
-void
-add_deactivated_query(int query_hash)
-{
-	hash_search(deactivated_queries, &query_hash, HASH_ENTER, NULL);
 }
