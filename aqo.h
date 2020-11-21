@@ -231,6 +231,12 @@ extern double auto_tuning_convergence_error;
 
 /* Machine learning parameters */
 
+#define WIDTH_1 (150) // size of the output of the first layer
+#define WIDTH_2 (150) // size of the output of the second layer
+#define lr (0.0001) // learning rate
+#define slope (0.01) // parameter of non-activation layer
+#define N_ITERS (100) // number of iterations
+
 /* Max number of matrix rows - max number of possible neighbors. */
 #define	aqo_K	(30)
 
@@ -269,8 +275,8 @@ extern void ppi_hook(ParamPathInfo *ppi);
 
 /* Hash functions */
 int			get_query_hash(Query *parse, const char *query_text);
-extern int get_fss_for_object(List *clauselist, List *selectivities,
-						List *relidslist, int *nfeatures, double **features);
+extern int get_fss_for_object(List *clauselist, List *selectivities, List *relidslist,
+		   int *nfeatures, int *nrels, double **features, int **rels, int **sorted_clauses);
 void		get_eclasses(List *clauselist, int *nargs,
 						 int **args_hash, int **eclass_hash);
 int			get_clause_hash(Expr *clause, int nargs,
@@ -286,10 +292,8 @@ bool add_query(int query_hash, bool learn_aqo, bool use_aqo,
 bool update_query(int query_hash, bool learn_aqo, bool use_aqo,
 			 int fspace_hash, bool auto_tuning);
 bool		add_query_text(int query_hash, const char *query_text);
-bool load_fss(int fss_hash, int ncols,
-		 double **matrix, double *targets, int *rows);
-extern bool update_fss(int fss_hash, int nrows, int ncols,
-					   double **matrix, double *targets);
+bool load_fss(int fss_hash, int *ncols, int **hashes, double **W1, double **W2, double *W3, double *b1, double *b2, double b3);
+extern bool update_fss(int fss_hash, int ncols, double **W1, double **W2, double *W3, double *b1, double *b2, double b3, int *hashes);
 QueryStat  *get_aqo_stat(int query_hash);
 void		update_aqo_stat(int query_hash, QueryStat * stat);
 void		init_deactivated_queries_storage(void);
@@ -347,12 +351,10 @@ void		aqo_copy_generic_path_info(PlannerInfo *root, Plan *dest, Path *src);
 void		aqo_ExecutorEnd(QueryDesc *queryDesc);
 
 /* Machine learning techniques */
-extern double OkNNr_predict(int nrows, int ncols,
-							double **matrix, const double *targets,
-							double *features);
-extern int OkNNr_learn(int matrix_rows, int matrix_cols,
-			double **matrix, double *targets,
-			double *features, double target);
+extern double
+neural_predict (int ncols, double **W1, double *b1, double **W2, double *b2, double *W3, double b3, double *features);
+extern void
+neural_learn (int matrix_cols, double **W1, double *b1, double **W2, double *b2, double *W3, double b3, double *features, double target);
 
 /* Automatic query tuning */
 void		automatical_query_tuning(int query_hash, QueryStat * stat);
