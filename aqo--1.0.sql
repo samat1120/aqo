@@ -30,8 +30,13 @@ CREATE TABLE public.aqo_data (
 	fspace_hash		int NOT NULL REFERENCES public.aqo_queries ON DELETE CASCADE,
 	fsspace_hash	int NOT NULL,
 	nfeatures		int NOT NULL,
-	features		double precision[][],
-	targets			double precision[],
+	W1                      double precision[][],
+	W2                      double precision[][],
+	W3                      double precision[],
+	b1                      double precision[],
+	b2                      double precision[],
+	b3                      double precision,
+	hashes 			integer[],
 	UNIQUE (fspace_hash, fsspace_hash)
 );
 
