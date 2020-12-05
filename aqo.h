@@ -233,7 +233,7 @@ extern double auto_tuning_convergence_error;
 
 #define WIDTH_1 (150) // size of the output of the first layer
 #define WIDTH_2 (150) // size of the output of the second layer
-#define lr (0.0001) // learning rate
+#define lr (0.01) // learning rate
 #define slope (0.01) // parameter of non-activation layer
 #define N_ITERS (100) // number of iterations
 
