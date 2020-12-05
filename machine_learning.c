@@ -79,7 +79,11 @@ neural_learn (int nfeatures, double **W1, double *b1, double **W2, double *b2, d
     double	*gradW2[WIDTH_2];
     double *dp3;
     double	*gradW1[WIDTH_1];
+    double lrr;
+    lrr = lr;
     for (int k = 0; k < N_ITERS; ++k){
+        if (k%20==0)
+            lrr = lr/10;
         out1 = palloc0(WIDTH_1 * sizeof(*out1));
         for (int i = 0; i < WIDTH_1; ++i){
             for (int j = 0; j < nfeatures; ++j)
@@ -141,17 +145,17 @@ neural_learn (int nfeatures, double **W1, double *b1, double **W2, double *b2, d
                 gradW1[i][j] = dp3[i] * feature[j];
         for (int i = 0; i < WIDTH_1; ++i){
             for (int j = 0; j < nfeatures; ++j)
-                W1[i][j] = W1[i][j] - lr*gradW1[i][j]; // updating the weights in the first layer
-            b1[i] = b1[i] - lr*dp3[i];
+                W1[i][j] = W1[i][j] - lrr*gradW1[i][j]; // updating the weights in the first layer
+            b1[i] = b1[i] - lrr*dp3[i];
         }
         for (int i = 0; i < WIDTH_2; ++i){
             for (int j = 0; j < WIDTH_1; ++j)
-                W2[i][j] = W2[i][j] - lr*gradW2[i][j]; // updating the weights in the second layer
-            b2[i] = b2[i] - lr*dp2[i];
+                W2[i][j] = W2[i][j] - lrr*gradW2[i][j]; // updating the weights in the second layer
+            b2[i] = b2[i] - lrr*dp2[i];
         }
         for (int i = 0; i < WIDTH_2; ++i)
-            W3[i] = W3[i] - lr*gradW3[i]; // updating the weights in the third layer
-        b3 = b3 - lr*dp1;
+            W3[i] = W3[i] - lrr*gradW3[i]; // updating the weights in the third layer
+        b3 = b3 - lrr*dp1;
         if (nfeatures>0)
         	for (int i = 0; i < WIDTH_1; ++i)
         		pfree(gradW1[i]);
