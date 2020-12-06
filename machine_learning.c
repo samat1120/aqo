@@ -83,7 +83,7 @@ neural_learn (int nfeatures, double **W1, double *b1, double **W2, double *b2, d
     lrr = lr;
     for (int k = 0; k < N_ITERS; ++k){
         if (k==25 || k==50 || k==75 || k==100)
-            lrr = lr/10;
+            lrr = lrr/10;
         out1 = palloc0(WIDTH_1 * sizeof(*out1));
         for (int i = 0; i < WIDTH_1; ++i){
             for (int j = 0; j < nfeatures; ++j)
