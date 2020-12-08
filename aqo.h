@@ -293,7 +293,7 @@ bool update_query(int query_hash, bool learn_aqo, bool use_aqo,
 			 int fspace_hash, bool auto_tuning);
 bool		add_query_text(int query_hash, const char *query_text);
 bool load_fss(int fss_hash, int *ncols, int **hashes, double **W1, double **W2, double *W3, double *b1, double *b2, double b3);
-extern bool update_fss(int fss_hash, int ncols, double **W1, double **W2, double *W3, double *b1, double *b2, double b3, int *hashes);
+extern bool update_fss(int fss_hash, int ncols, double **W1, double **W2, double *W3, double *b1, double *b2, double b3, int *hashes, int time_in_mills);
 QueryStat  *get_aqo_stat(int query_hash);
 void		update_aqo_stat(int query_hash, QueryStat * stat);
 void		init_deactivated_queries_storage(void);
