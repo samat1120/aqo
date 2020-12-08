@@ -115,6 +115,7 @@
 #define __ML_CARD_H__
 
 #include <math.h>
+#include <sys/time.h>
 
 #include "postgres.h"
 
