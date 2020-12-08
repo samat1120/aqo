@@ -37,6 +37,7 @@ CREATE TABLE public.aqo_data (
 	b2                      double precision[],
 	b3                      double precision,
 	hashes 			integer[],
+	time_in_mills           int NOT NULL,
 	UNIQUE (fspace_hash, fsspace_hash)
 );
 
