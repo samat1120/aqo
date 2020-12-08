@@ -551,7 +551,7 @@ update_fss(int fss_hash, int ncols, double **W1, double **W2, double *W3, double
 		values[6] = PointerGetDatum(form_vector(b1, WIDTH_1));
 		values[7] = PointerGetDatum(form_vector(b2, WIDTH_2));
 		values[8] = Float8GetDatum(b3);
-		values[9] = Int32GetDatum(time_in_mills);
+		values[10] = Int32GetDatum(time_in_mills);
 		tuple = heap_form_tuple(tuple_desc, values, isnull);
 		PG_TRY();
 		{
@@ -589,7 +589,7 @@ update_fss(int fss_hash, int ncols, double **W1, double **W2, double *W3, double
 		values[6] = PointerGetDatum(form_vector(b1, WIDTH_1));
 		values[7] = PointerGetDatum(form_vector(b2, WIDTH_2));
 		values[8] = Float8GetDatum(b3);
-		values[9] = Int32GetDatum(time_in_mills);
+		values[10] = Int32GetDatum(time_in_mills);
 		nw_tuple = heap_modify_tuple(tuple, tuple_desc,
 									 values, isnull, replace);
 		if (my_simple_heap_update(aqo_data_heap, &(nw_tuple->t_self), nw_tuple,
