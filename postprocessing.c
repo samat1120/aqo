@@ -109,6 +109,8 @@ atomic_fss_learn_step(int fss_hash,
 	int i,j,tmp,to_add;
 	double	**new_W1;
 	double stdv;
+	struct timeval stop, start;
+	unsigned long int time_in_mills;
 	if (!load_fss(fss_hash, &ncols, &hashes, W1, W2, W3, b1, b2, b3)){
 		for (i = 0; i < WIDTH_1; ++i)
 			W1[i] = palloc(sizeof(double) * (nfeatures+nrels));
@@ -123,8 +125,11 @@ atomic_fss_learn_step(int fss_hash,
 			hashes[nfeatures+i] = rels[i];
 			feats[nfeatures+i] = 1;
 		}
+                gettimeofday(&start, NULL);
 		neural_learn((nfeatures+nrels), W1, b1, W2, b2, W3, b3, feats, target);
-		update_fss(fss_hash, (nfeatures+nrels), W1, W2, W3, b1, b2, b3, hashes);
+		gettimeofday(&stop, NULL);
+		time_in_mills = (stop.tv_sec - start.tv_sec) * 1000 + stop.tv_usec/1000 - start.tv_usec/1000;
+		update_fss(fss_hash, (nfeatures+nrels), W1, W2, W3, b1, b2, b3, hashes, time_in_mills);
 		if ((nfeatures+nrels) > 0)
 			for (i = 0; i < WIDTH_1; ++i)
 				pfree(W1[i]);
@@ -179,8 +184,11 @@ atomic_fss_learn_step(int fss_hash,
 				new_W1[i][j] = W1[i][j];
 			}
 		}
+		gettimeofday(&start, NULL);
 		neural_learn((ncols+to_add), new_W1, b1, W2, b2, W3, b3, feats, target);
-		update_fss(fss_hash, (ncols+to_add), new_W1, W2, W3, b1, b2, b3, new_hashes);
+		gettimeofday(&stop, NULL);
+		time_in_mills = (stop.tv_sec - start.tv_sec) * 1000 + stop.tv_usec/1000 - start.tv_usec/1000;
+		update_fss(fss_hash, (ncols+to_add), new_W1, W2, W3, b1, b2, b3, new_hashes, time_in_mills);
 
 		if (ncols > 0)
 			for (i = 0; i < WIDTH_1; ++i)
