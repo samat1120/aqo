@@ -376,8 +376,8 @@ load_fss(int fss_hash, int *ncols, int **hashes, double **W1, double **W2, doubl
 
 	LOCKMODE	lockmode = AccessShareLock;
 
-	Datum		values[10];
-	bool		isnull[10];
+	Datum		values[11];
+	bool		isnull[11];
 
 	bool		success = true;
 	int widthh_1, widthh_2;
@@ -470,7 +470,7 @@ load_fss(int fss_hash, int *ncols, int **hashes, double **W1, double **W2, doubl
  * 'targets' is vector of size 'nrows'
  */
 bool
-update_fss(int fss_hash, int ncols, double **W1, double **W2, double *W3, double *b1, double *b2, double b3, int *hashes)
+update_fss(int fss_hash, int ncols, double **W1, double **W2, double *W3, double *b1, double *b2, double b3, int *hashes, int time_in_mills)
 {
 	RangeVar   *aqo_data_table_rv;
 	Relation	aqo_data_heap;
@@ -490,9 +490,9 @@ update_fss(int fss_hash, int ncols, double **W1, double **W2, double *W3, double
 	IndexScanDesc data_index_scan;
 	ScanKeyData	key[2];
 
-	Datum		values[10];
-	bool		isnull[10] = { false, false, false, false, false, false, false, false, false, false };
-	bool		replace[10] = { false, true, true, true, true, true, true, true, true, true };
+	Datum		values[11];
+	bool		isnull[11] = { false, false, false, false, false, false, false, false, false, false, false};
+	bool		replace[11] = { false, true, true, true, true, true, true, true, true, true, true};
 
 	data_index_rel_oid = RelnameGetRelid("aqo_fss_access_idx");
 	if (!OidIsValid(data_index_rel_oid))
@@ -551,6 +551,7 @@ update_fss(int fss_hash, int ncols, double **W1, double **W2, double *W3, double
 		values[6] = PointerGetDatum(form_vector(b1, WIDTH_1));
 		values[7] = PointerGetDatum(form_vector(b2, WIDTH_2));
 		values[8] = Float8GetDatum(b3);
+		values[9] = Int32GetDatum(time_in_mills);
 		tuple = heap_form_tuple(tuple_desc, values, isnull);
 		PG_TRY();
 		{
@@ -588,6 +589,7 @@ update_fss(int fss_hash, int ncols, double **W1, double **W2, double *W3, double
 		values[6] = PointerGetDatum(form_vector(b1, WIDTH_1));
 		values[7] = PointerGetDatum(form_vector(b2, WIDTH_2));
 		values[8] = Float8GetDatum(b3);
+		values[9] = Int32GetDatum(time_in_mills);
 		nw_tuple = heap_modify_tuple(tuple, tuple_desc,
 									 values, isnull, replace);
 		if (my_simple_heap_update(aqo_data_heap, &(nw_tuple->t_self), nw_tuple,
