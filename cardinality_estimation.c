@@ -106,10 +106,10 @@ predict_for_relation(List *restrict_clauses, List *selectivities,
 				for (i = 0; i < WIDTH_1; ++i){
 					pfree(W1[i]);
 				}
-		if ((ncols+to_add) > 0)
-				for (i = 0; i < WIDTH_1; ++i){
-					pfree(new_W1[i]);
-				}
+		//if ((ncols+to_add) > 0)
+				//for (i = 0; i < WIDTH_1; ++i){
+					//pfree(new_W1[i]);
+				//}
 		pfree(feats);
 		pfree(hashes);
 	}
