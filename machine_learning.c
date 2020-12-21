@@ -21,6 +21,109 @@
 
 #include "aqo.h"
 
+static void optim_step(int n_batch, int n_cols, double **W1, double *b1, double **W2, double *b2, double *W3, double *b3,
+                      double **gradW1, double *gradb1, double **gradW2, double *gradb2, double *gradW3, double *gradb3,
+                      double **W1_m, double **W1_v, double *b1_m, double *b1_v, double **W2_m, double **W2_v, double *b2_m, double *b2_v, double *W3_m, double *W3_v, double *b3_m, double *b3_v,
+                      int *state_t
+                      );
+
+static void zero_grad(int n_batch, int n_cols, double **output1, double **output2, double **output3, double **output4, double *output5,
+                       double **gradInput2, double **gradInput3, double **gradInput4, double **gradInput5, double *gradInput,
+                       double **gradW1, double *gradb1, double **gradW2, double *gradb2, double *gradW3, double *gradb3);
+
+static void optim_step(int n_batch, int n_cols, double **W1, double *b1, double **W2, double *b2, double *W3, double *b3,
+                      double **gradW1, double *gradb1, double **gradW2, double *gradb2, double *gradW3, double *gradb3,
+                      double **W1_m, double **W1_v, double *b1_m, double *b1_v, double **W2_m, double **W2_v, double *b2_m, double *b2_v, double *W3_m, double *W3_v, double *b3_m, double *b3_v,
+                      int *state_t
+                      )
+{
+    int i,j;
+    if ((*state_t)==0){
+        for (i=0;i<WIDTH_1;i++){
+            for (j=0;j<n_cols;j++){
+                W1_m[i][j] = gradW1[i][j];
+                W1_v[i][j] = pow(gradW1[i][j],2);
+            }
+            b1_m[i] = gradb1[i];
+            b1_v[i] = pow(gradb1[i],2);
+        }
+        for (i=0;i<WIDTH_2;i++){
+            for (j=0;j<WIDTH_1;j++){
+                W2_m[i][j] = gradW2[i][j];
+                W2_v[i][j] = pow(gradW2[i][j],2);
+            }
+            b2_m[i] = gradb2[i];
+            b2_v[i] = pow(gradb2[i],2);
+        }
+        for (i=0;i<WIDTH_2;i++){
+            W3_m[i] = gradW3[i];
+            W3_v[i] = pow(gradW3[i],2);
+        }
+        (*b3_m) = (*gradb3);
+        (*b3_v) = pow((*gradb3),2);
+    }
+    (*state_t)++;
+    for (i=0;i<WIDTH_1;i++){
+        for (j=0;j<n_cols;j++){
+            W1_m[i][j] = beta_1*W1_m[i][j]+(1-beta_1)*gradW1[i][j];
+            W1_v[i][j] = beta_2*W1_v[i][j]+(1-beta_2)*pow(gradW1[i][j],2);
+            W1[i][j] = W1[i][j] - lr * W1_m[i][j] / (pow(W1_v[i][j],2) + eps);
+        }
+        b1_m[i] = beta_1*b1_m[i]+(1-beta_1)*gradb1[i];
+        b1_v[i] = beta_2*b1_v[i]+(1-beta_2)*pow(gradb1[i],2);
+        b1[i] = b1[i] - lr * b1_m[i] / (pow(b1_v[i],2) + eps);
+    }
+    for (i=0;i<WIDTH_2;i++){
+        for (j=0;j<WIDTH_1;j++){
+            W2_m[i][j] = beta_1*W2_m[i][j]+(1-beta_1)*gradW2[i][j];
+            W2_v[i][j] = beta_2*W2_v[i][j]+(1-beta_2)*pow(gradW2[i][j],2);
+            W2[i][j] = W2[i][j] - lr * W2_m[i][j] / (pow(W2_v[i][j],2) + eps);
+        }
+        b2_m[i] = beta_1*b2_m[i]+(1-beta_1)*gradb2[i];
+        b2_v[i] = beta_2*b2_v[i]+(1-beta_2)*pow(gradb2[i],2);
+        b2[i] = b2[i] - lr * b2_m[i] / (pow(b2_v[i],2) + eps);
+    }
+    for (i=0;i<WIDTH_2;i++){
+        W3_m[i] = beta_1*W3_m[i]+(1-beta_1)*gradW3[i];
+        W3_v[i] = beta_2*W3_v[i]+(1-beta_2)*pow(gradW3[i],2);
+        W3[i] = W3[i] - lr * W3_m[i] / (pow(W3_v[i],2) + eps);
+    }
+    (*b3_m) = beta_1*(*b3_m)+(1-beta_1)*(*gradb3);
+    (*b3_v) = beta_2*(*b3_v)+(1-beta_2)*pow((*gradb3),2);
+    (*b3) = (*b3) - lr * (*b3_m) / (pow((*b3_v),2) + eps);
+}
+
+static void zero_grad(int n_batch, int n_cols, double **output1, double **output2, double **output3, double **output4, double *output5,
+                       double **gradInput2, double **gradInput3, double **gradInput4, double **gradInput5, double *gradInput,
+                       double **gradW1, double *gradb1, double **gradW2, double *gradb2, double *gradW3, double *gradb3){
+    int i,j;
+    for (i=0;i<n_batch;i++){
+         for (j=0;j<WIDTH_1;++j){
+             output1[i][j] = 0;
+             output2[i][j] = 0;
+             gradInput2[i][j] = 0;
+             gradInput3[i][j] = 0;}
+             for (j=0;j<WIDTH_2;++j){
+             gradInput4[i][j] = 0;
+             gradInput5[i][j] = 0;
+             output3[i][j] = 0;
+             output4[i][j] = 0;}
+         output5[i] = 0;
+         gradInput[i]=0;
+    }
+
+    for (i=0;i<WIDTH_1;i++){
+        for (j=0;j<n_cols;++j)
+            gradW1[i][j] = 0;
+        gradb1[i] = 0;}
+    for (i=0;i<WIDTH_2;i++){
+        for (j=0;j<WIDTH_1;++j)
+            gradW2[i][j] = 0;
+        gradb2[i] = 0;
+        gradW3[i] = 0;}
+    gradb3 = 0;
+}
+
 double
 neural_predict (int nfeatures, double **W1, double *b1, double **W2, double *b2, double *W3, double b3, double *feature) //prediction
 {
@@ -67,106 +170,167 @@ neural_predict (int nfeatures, double **W1, double *b1, double **W2, double *b2,
 }
 
 void
-neural_learn (int nfeatures, double **W1, double *b1, double **W2, double *b2, double *W3, double b3, double *feature, double target)
+neural_learn (int n_batch, int n_cols, double **W1, double *b1, double **W2, double *b2, double *W3, double *b3,
+                      double **W1_m, double **W1_v, double *b1_m, double *b1_v, double **W2_m, double **W2_v, double *b2_m,
+                      double *b2_v, double *W3_m, double *W3_v, double *b3_m, double *b3_v,
+                      int *state_t, double **features, double *targets)
 {
-    double *out1;
-    double *out2;
-    double *out3;
-    double *out4;
-    double out5, loss, dp1;
-    double *gradW3;
-    double *dp2;
-    double	*gradW2[WIDTH_2];
-    double *dp3;
-    double	*gradW1[WIDTH_1];
-    double lrr;
-    lrr = lr;
-    for (int k = 0; k < N_ITERS; ++k){
-        if (k%35 == 0)
-            lrr = lrr/10;
-        out1 = palloc0(WIDTH_1 * sizeof(*out1));
-        for (int i = 0; i < WIDTH_1; ++i){
-            for (int j = 0; j < nfeatures; ++j)
-                out1[i] = out1[i]+feature[j]*W1[i][j];
-            out1[i]=out1[i]+b1[i];
-        }
-        out2 = palloc0(WIDTH_1 * sizeof(*out2));
-        for (int i = 0; i < WIDTH_1; ++i){
-            if (out1[i]<out1[i]*slope)
-                out2[i]=out1[i]*slope;
-            else
-                out2[i]=out1[i];
-        }
-        out3 = palloc0(WIDTH_2 * sizeof(*out3));
-        for (int i = 0; i < WIDTH_2; ++i){
-            for (int j = 0; j < WIDTH_1; ++j)
-                out3[i]=out3[i]+out2[j]*W2[i][j];
-            out3[i]=out3[i]+b2[i];
-        }
-        out4 = palloc0(WIDTH_2 * sizeof(*out4));
-        for (int i = 0; i < WIDTH_2; ++i){
-            if (out3[i]<out3[i]*slope)
-                out4[i]=out3[i]*slope;
-            else
-                out4[i]=out3[i];
-        }
-        out5=0;
-        for (int j = 0; j < WIDTH_2; ++j)
-            out5=out5+out4[j]*W3[j];
-        out5=out5+b3; // output of forward pass
-        loss = pow(out5 - target,2); 
-        dp1 = (out5 - target) * 2; // derivative of the loss w.r.t. the output of forward pass
-        gradW3=palloc(WIDTH_2 * sizeof(*gradW3)); // vector for the gradient of the loss w.r.t. weight vector in the third layer
-        for (int i = 0; i < WIDTH_2; ++i)
-            gradW3[i] = dp1 * out4[i];
-        dp2=palloc(WIDTH_2 * sizeof(*dp2));
-        for (int i = 0; i < WIDTH_2; ++i)
-            dp2[i] = dp1 * W3[i];
-        for (int i = 0; i < WIDTH_2; ++i)
-            if (out3[i]<slope*out3[i])
-                dp2[i] = dp2[i]*slope;
-        gradW2[WIDTH_2]; // matrix for the gradient of the loss w.r.t. weight matrix in the second layer
-        for (int i = 0; i < WIDTH_2; ++i)
-            gradW2[i] = palloc(sizeof(**gradW2) * WIDTH_1);
-        for (int i = 0; i < WIDTH_2; ++i)
-            for (int j = 0; j < WIDTH_1; ++j)
-                gradW2[i][j]=dp2[i]*out2[j];
-        dp3=palloc0(sizeof(*dp3) * WIDTH_1);
-        for (int i = 0; i < WIDTH_1; ++i)
-            for (int j = 0; j < WIDTH_2; ++j)
-                dp3[j]+= dp2[j]*W2[j][i];
-        for (int i = 0; i < WIDTH_1; ++i)
-            if (out1[i]<slope*out1[i])
-                dp3[i] = dp3[i]*slope;
-        for (int i = 0; i < WIDTH_1; ++i)
-            gradW1[i] = palloc(sizeof(**gradW1) * nfeatures);
-        for (int i = 0; i < WIDTH_1; ++i)
-            for (int j = 0; j < nfeatures; ++j)
-                gradW1[i][j] = dp3[i] * feature[j];
-        for (int i = 0; i < WIDTH_1; ++i){
-            for (int j = 0; j < nfeatures; ++j)
-                W1[i][j] = W1[i][j] - lrr*gradW1[i][j]; // updating the weights in the first layer
-            b1[i] = b1[i] - lrr*dp3[i];
-        }
-        for (int i = 0; i < WIDTH_2; ++i){
-            for (int j = 0; j < WIDTH_1; ++j)
-                W2[i][j] = W2[i][j] - lrr*gradW2[i][j]; // updating the weights in the second layer
-            b2[i] = b2[i] - lrr*dp2[i];
-        }
-        for (int i = 0; i < WIDTH_2; ++i)
-            W3[i] = W3[i] - lrr*gradW3[i]; // updating the weights in the third layer
-        b3 = b3 - lrr*dp1;
-        if (nfeatures>0)
-        	for (int i = 0; i < WIDTH_1; ++i)
-        		pfree(gradW1[i]);
-        for (int i = 0; i < WIDTH_2; ++i)
-        	pfree(gradW2[i]);
-        pfree(gradW3);
-        pfree(out1);
-        pfree(out2);
-        pfree(out3);
-        pfree(out4);
-        pfree(dp2);
-        pfree(dp3);
+    int i,j,k, iter;
+    double elem, output;
+    double *output1[n_batch], *output2[n_batch], *output3[n_batch], *output4[n_batch], *output5,
+           *gradInput2[n_batch], *gradInput3[n_batch], *gradInput4[n_batch], *gradInput5[n_batch], *gradInput,
+           *gradW1[WIDTH_1], *gradb1, *gradW2[WIDTH_2], *gradb2, *gradW3, gradb3;
+    for (i=0;i<n_batch;i++){
+        output1[i] = palloc0(sizeof(**output1) * WIDTH_1);
+        output2[i] = palloc0(sizeof(**output2) * WIDTH_1);
+        output3[i] = palloc0(sizeof(**output3) * WIDTH_2);
+        output4[i] = palloc0(sizeof(**output4) * WIDTH_2);
+        gradInput2[i] = palloc0(sizeof(**gradInput2) * WIDTH_1);
+        gradInput3[i] = palloc0(sizeof(**gradInput3) * WIDTH_1);
+        gradInput4[i] = palloc0(sizeof(**gradInput4) * WIDTH_2);
+        gradInput5[i] = palloc0(sizeof(**gradInput5) * WIDTH_2);
     }
+    output5 = palloc0(sizeof(*output5) * n_batch);
+    gradInput = palloc0(sizeof(*gradInput) * n_batch);
+    for (i=0;i<WIDTH_1;i++)
+        gradW1[i] = palloc0(sizeof(**gradW1) * n_cols);
+    gradb1 = palloc0(sizeof(*gradb1) * WIDTH_1);
+    for (i=0;i<WIDTH_2;i++)
+        gradW2[i] = palloc0(sizeof(**gradW2) * WIDTH_1);
+    gradb2 = palloc0(sizeof(*gradb2) * WIDTH_2);
+    gradW3 = palloc0(sizeof(*gradW3) * WIDTH_2);
+
+
+    for (iter=0;iter<N_ITERS;++iter){
+        zero_grad(n_batch, n_cols, output1, output2, output3, output4, output5,
+                       gradInput2, gradInput3, gradInput4, gradInput5, gradInput,
+                       gradW1, gradb1, gradW2, gradb2, gradW3, &gradb3);
+
+        for (i=0;i<n_batch;i++)
+            for (j=0;j<WIDTH_1;j++){
+                elem=0;
+                for (k=0;k<n_cols;k++)
+                    elem=elem+features[i][k]*W1[j][k];
+                elem=elem+b1[j];
+                output1[i][j]=elem;
+            }
+        for (i=0;i<n_batch;i++)
+            for (j=0;j<WIDTH_1;j++){
+                output2[i][j]=output1[i][j];
+                if (output1[i][j]<slope * output1[i][j])
+                    output2[i][j]=slope * output1[i][j];
+            }
+        for (i=0;i<n_batch;i++)
+            for (j=0;j<WIDTH_2;j++){
+                elem=0;
+                for (k=0;k<WIDTH_1;k++)
+                    elem=elem+output2[i][k]*W2[j][k];
+                elem=elem+b2[j];
+                output3[i][j]=elem;
+            }
+        for (i=0;i<n_batch;i++)
+            for (j=0;j<WIDTH_2;j++){
+                output4[i][j]=output3[i][j];
+                if (output3[i][j]<slope * output3[i][j])
+                    output4[i][j]=slope * output3[i][j];
+            }
+        for (i=0;i<n_batch;i++){
+            elem=0;
+            for (k=0;k<WIDTH_2;k++)
+                elem=elem+output4[i][k]*W3[k];
+            elem=elem+*b3;
+            output5[i]=elem;
+        }
+        output=0;
+        for (i=0;i<n_batch;i++)
+            output=output+pow(output5[i]-targets[i],2);
+        output/=n_batch;
+        for (i=0;i<n_batch;i++)
+            gradInput[i]=2*(output5[i]-targets[i])/n_batch;
+        for (i=0;i<n_batch;i++)
+            for (j=0;j<WIDTH_2;j++)
+                gradInput5[i][k] = gradInput[i]*W3[k];
+        for (i=0;i<WIDTH_2;i++){
+            elem=0;
+            for (j=0;j<n_batch;j++)
+                elem=elem+gradInput[j]*output4[j][i];
+            gradW3[i]=elem;
+        }
+        for (i=0;i<n_batch;i++)
+            gradb3=gradb3+gradInput[i];
+        for (i=0;i<n_batch;i++)
+            for (j=0;j<WIDTH_2;j++){
+                gradInput4[i][j] = gradInput5[i][j];
+                if (output3[i][j] < slope * output3[i][j])
+                    gradInput4[i][j] = gradInput5[i][j]*slope;
+            }
+        for (i=0;i<n_batch;i++)
+            for (j=0;j<WIDTH_1;j++){
+                elem=0;
+                for (k=0;k<WIDTH_2;k++)
+                    elem=elem+gradInput4[i][k]*W2[k][j];
+                gradInput3[i][j]=elem;
+            }
+        for (i=0;i<WIDTH_2;i++)
+            for (j=0;j<WIDTH_1;j++){
+                elem=0;
+                for (k=0;k<n_batch;k++)
+                    elem=elem+gradInput4[k][i]*output2[k][j];
+                gradW2[i][j]=elem;
+            }
+        for (i=0;i<WIDTH_2;i++)
+            for (j=0;j<n_batch;j++)
+                gradb2[i]=gradb2[i]+gradInput4[j][i];
+        for (i=0;i<n_batch;i++)
+            for (j=0;j<WIDTH_1;j++){
+                gradInput2[i][j] = gradInput3[i][j];
+                if (output1[i][j] < slope * output1[i][j])
+                    gradInput2[i][j] = gradInput3[i][j]*slope;
+            }
+        for (i=0;i<WIDTH_1;i++)
+            for (j=0;j<n_cols;j++){
+                elem=0;
+                for (k=0;k<n_batch;k++)
+                    elem=elem+gradInput2[k][i]*features[k][j];
+                gradW1[i][j]=elem;
+            }
+        for (i=0;i<WIDTH_1;i++)
+            for (j=0;j<n_batch;j++)
+                gradb1[i]=gradb1[i]+gradInput2[j][i];
+        optim_step(n_batch, n_cols, W1, b1, W2, b2, W3, b3,
+                      gradW1, gradb1, gradW2, gradb2, gradW3, &gradb3,
+                      W1_m, W1_v, b1_m, b1_v, W2_m, W2_v, b2_m, b2_v, W3_m, W3_v, b3_m, b3_v,
+                      state_t
+                      );
+        }
+        if (WIDTH_1>0)
+            for (i=0;i<n_batch;i++){
+                pfree(output1[i]);
+                pfree(output2[i]);
+                pfree(gradInput2[i]);
+                pfree(gradInput3[i]);
+            }
+        if (WIDTH_2>0)
+            for (i=0;i<n_batch;i++){
+                pfree(output3[i]);
+                pfree(output4[i]);
+                pfree(gradInput4[i]);
+                pfree(gradInput5[i]);
+            }
+        if (n_batch>0){
+            pfree(output5);
+            pfree(gradInput);
+        }
+        if (n_cols>0)
+            for (i=0;i<WIDTH_1;i++)
+                pfree(gradW1[i]);
+        if (WIDTH_1>0)
+            pfree(gradb1);
+        if (WIDTH_1>0)
+            for (i=0;i<WIDTH_2;i++)
+                pfree(gradW2[i]);
+        if (WIDTH_2>0){
+            pfree(gradb2);
+            pfree(gradW3);
+        }
 }
