@@ -167,7 +167,7 @@ atomic_fss_learn_step(int fss_hash,
 	     W2_m[i] = palloc(sizeof(double) * WIDTH_1);
 	     W2_v[i] = palloc(sizeof(double) * WIDTH_1);}
 	double stdv;
-	if (!load_fss(fss_hash, &ncols, &n_batches, &hashes, matrix, targets, W1, W1_m, W1_v, W2, W2_m, W2_v, W3, W3_m, W3_v, b1, b1_m, b1_v, b2, b2_m, b2_v, &b3, &b3_m, &b3_v, state)){
+	if (!load_fss(fss_hash, &ncols, &n_batches, &hashes, matrix, targets, W1, W1_m, W1_v, W2, W2_m, W2_v, W3, W3_m, W3_v, b1, b1_m, b1_v, b2, b2_m, b2_v, &b3, &b3_m, &b3_v, state_t)){
 		for (i = 0; i < WIDTH_1; ++i){
 		    W1[i] = palloc(sizeof(double) * (nfeatures+nrels));
 		    W1_m[i] = palloc(sizeof(double) * (nfeatures+nrels));
