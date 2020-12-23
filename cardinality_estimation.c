@@ -28,14 +28,29 @@ predict_for_relation(List *restrict_clauses, List *selectivities,
 	int	   nfeatures;
 	int	   nrels;
 	int	   ncols;
-	double	**W1;
-	double	**new_W1;
-	double	**W2;
+	int	   n_batches;
+	int state_t;
+	double *matrix[n_all_samples];
+	double targets[n_all_samples];
+	double	*W1[WIDTH_1];
+	double	*W1_m[WIDTH_1];
+	double	*W1_v[WIDTH_1];
+	double	*W2[WIDTH_2];
+	double	*W2_m[WIDTH_2];
+	double	*W2_v[WIDTH_2];
 	double	*W3;
+	double	*W3_m;
+	double	*W3_v;
 	double	*b1;
+	double	*b1_m;
+	double	*b1_v;
 	double	*b2;
+	double	*b2_m;
+	double	*b2_v;
 	double	*feats, *fs;
-	double	b3 = 0;
+	double	b3;
+	double	b3_m;
+	double	b3_v;
 	double	*features;
 	double stdv;
 	int	*rels;
@@ -48,13 +63,19 @@ predict_for_relation(List *restrict_clauses, List *selectivities,
 	*fss_hash = get_fss_for_object(restrict_clauses, selectivities, relids,
 														&nfeatures, &nrels, &features, &rels, &sorted_clauses);
 
-	W1 = (double**)palloc0(sizeof(double*) * WIDTH_1);
-	W2 = (double**)palloc0(sizeof(double*) * WIDTH_2);
-	for (i = 0; i < WIDTH_2; ++i)
-			W2[i] = palloc0(sizeof(**W2) * WIDTH_1);
+	for (i = 0; i < WIDTH_2; ++i){
+		W2[i] = palloc0(sizeof(**W2) * WIDTH_1);
+		W2_m[i] = palloc0(sizeof(**W2) * WIDTH_1);
+		W2_v[i] = palloc0(sizeof(**W2) * WIDTH_1);}
 	W3 = palloc0(sizeof(*W3) * WIDTH_2);
+	W3_m = palloc0(sizeof(*W3) * WIDTH_2);
+	W3_v = palloc0(sizeof(*W3) * WIDTH_2);
 	b1 = palloc0(sizeof(*b1) * WIDTH_1);
+	b1_m = palloc0(sizeof(*b1) * WIDTH_1);
+	b1_v = palloc0(sizeof(*b1) * WIDTH_1);
 	b2 = palloc0(sizeof(*b2) * WIDTH_2);
+	b2_m = palloc0(sizeof(*b2) * WIDTH_2);
+	b2_v = palloc0(sizeof(*b2) * WIDTH_2);
 	hshes = palloc0(sizeof(*hshes) * (nfeatures+nrels));
 	fs = palloc0(sizeof(*fs) * (nfeatures+nrels));
 	for (i=0;i<nfeatures;i++){
@@ -66,7 +87,7 @@ predict_for_relation(List *restrict_clauses, List *selectivities,
 		fs[nfeatures+i] = 1;
 	}
 
-	if (load_fss(*fss_hash, &ncols, &hashes, W1, W2, W3, b1, b2, b3)){
+	if (load_fss(*fss_hash, &ncols, &n_batches, &hashes, matrix, targets, W1, W1_m, W1_v, W2, W2_m, W2_v, W3, W3_m, W3_v, b1, b1_m, b1_v, b2, b2_m, b2_v, &b3, &b3_m, &b3_v, state_t){
 		feats = palloc0(sizeof(*feats) * (ncols+nfeatures+nrels));
 		for (i=0;i<(nfeatures+nrels);i++){
 			tmp = i;
