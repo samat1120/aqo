@@ -360,7 +360,7 @@ add_query_text(int query_hash, const char *query_text)
  *			objects in the given feature space
  */
 bool
-load_fss(int fss_hash, int *ncols, int *n_batches, int **hashes, double **matrix, double *targets,  double **W1, double **W1_m, double **W1_v, double **W2, double **W2_m, double **W2_v, double *W3, double *W3_m, double *W3_v, double *b1, double *b1_m, double *b1_v, double *b2, double *b2_m, double *b2_v, double *b3, double *b3_m, , double *b3_v, int *state_t)
+load_fss(int fss_hash, int *ncols, int *n_batches, int **hashes, double **matrix, double *targets,  double **W1, double **W1_m, double **W1_v, double **W2, double **W2_m, double **W2_v, double *W3, double *W3_m, double *W3_v, double *b1, double *b1_m, double *b1_v, double *b2, double *b2_m, double *b2_v, double *b3, double *b3_m, , double *b3_v)
 {
 	RangeVar   *aqo_data_table_rv;
 	Relation	aqo_data_heap;
@@ -376,8 +376,8 @@ load_fss(int fss_hash, int *ncols, int *n_batches, int **hashes, double **matrix
 
 	LOCKMODE	lockmode = AccessShareLock;
 
-	Datum		values[26];
-	bool		isnull[26];
+	Datum		values[25];
+	bool		isnull[25];
 
 	bool		success = true;
 	int widthh_1, widthh_2;
@@ -427,7 +427,6 @@ load_fss(int fss_hash, int *ncols, int *n_batches, int **hashes, double **matrix
 
 		*ncols =  DatumGetInt32(values[2]);
 		*n_bathces =  DatumGetInt32(values[3]);
-		*state_t = DatumGetInt32(values[4]);
 
 		if (*ncols > 0){
 			for (int i = 0; i < WIDTH_1; ++i){
@@ -445,29 +444,29 @@ load_fss(int fss_hash, int *ncols, int *n_batches, int **hashes, double **matrix
 			 * The case than an object has not any filters and selectivities
 			 */
 		{
-			deform_matrix(values[5], matrix);
-			deform_matrix(values[7], W1);
-			deform_matrix(values[8], W1_m);
-			deform_matrix(values[9], W1_v);
-			deform_int_vector(values[25], (*hashes), ncols);
+			deform_matrix(values[4], matrix);
+			deform_matrix(values[6], W1);
+			deform_matrix(values[7], W1_m);
+			deform_matrix(values[8], W1_v);
+			deform_int_vector(values[24], (*hashes), ncols);
 		}
-		deform_vector(values[6], targets, n_batch)
+		deform_vector(values[5], targets, n_batch)
 				
-		deform_matrix(values[10], W2);
-		deform_matrix(values[11], W2_m);
-		deform_matrix(values[12], W2_v);
-		deform_vector(values[13], W3, &widthh_2);
-		deform_vector(values[14], W3_m, &widthh_2);
-		deform_vector(values[15], W3_v, &widthh_2);
-		deform_vector(values[16], b1, &widthh_1);
-		deform_vector(values[17], b1_m, &widthh_1);
-		deform_vector(values[18], b1_v, &widthh_1);
-		deform_vector(values[19], b2, &widthh_2);
-		deform_vector(values[20], b2_m, &widthh_2);
-		deform_vector(values[21], b2_v, &widthh_2);
-		*b3 = DatumGetFloat8(values[22]);
-		*b3_m = DatumGetFloat8(values[23]);
-		*b3_v = DatumGetFloat8(values[24]);
+		deform_matrix(values[9], W2);
+		deform_matrix(values[10], W2_m);
+		deform_matrix(values[11], W2_v);
+		deform_vector(values[12], W3, &widthh_2);
+		deform_vector(values[13], W3_m, &widthh_2);
+		deform_vector(values[14], W3_v, &widthh_2);
+		deform_vector(values[15], b1, &widthh_1);
+		deform_vector(values[16], b1_m, &widthh_1);
+		deform_vector(values[17], b1_v, &widthh_1);
+		deform_vector(values[18], b2, &widthh_2);
+		deform_vector(values[19], b2_m, &widthh_2);
+		deform_vector(values[20], b2_v, &widthh_2);
+		*b3 = DatumGetFloat8(values[21]);
+		*b3_m = DatumGetFloat8(values[22]);
+		*b3_v = DatumGetFloat8(values[23]);
 	}
 	else
 		success = false;
@@ -493,7 +492,7 @@ load_fss(int fss_hash, int *ncols, int *n_batches, int **hashes, double **matrix
  * 'targets' is vector of size 'nrows'
  */
 bool
-update_fss(int fss_hash, int ncols, int n_batches, int *hashes, double **matrix, double *targets,  double **W1, double **W1_m, double **W1_v, double **W2, double **W2_m, double **W2_v, double *W3, double *W3_m, double *W3_v, double *b1, double *b1_m, double *b1_v, double *b2, double *b2_m, double *b2_v, double *b3, double *b3_m, , double *b3_v, int state_t)
+update_fss(int fss_hash, int ncols, int n_batches, int *hashes, double **matrix, double *targets,  double **W1, double **W1_m, double **W1_v, double **W2, double **W2_m, double **W2_v, double *W3, double *W3_m, double *W3_v, double *b1, double *b1_m, double *b1_v, double *b2, double *b2_m, double *b2_v, double *b3, double *b3_m, , double *b3_v)
 {
 	RangeVar   *aqo_data_table_rv;
 	Relation	aqo_data_heap;
@@ -513,9 +512,9 @@ update_fss(int fss_hash, int ncols, int n_batches, int *hashes, double **matrix,
 	IndexScanDesc data_index_scan;
 	ScanKeyData	key[2];
 
-	Datum		values[26];
-	bool		isnull[26] = { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false,false, false, false, false};
-	bool		replace[26] = { false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true};
+	Datum		values[25];
+	bool		isnull[25] = { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false,false, false, false, false};
+	bool		replace[25] = { false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true};
 
 	data_index_rel_oid = RelnameGetRelid("aqo_fss_access_idx");
 	if (!OidIsValid(data_index_rel_oid))
@@ -560,39 +559,38 @@ update_fss(int fss_hash, int ncols, int n_batches, int *hashes, double **matrix,
 		values[1] = Int32GetDatum(fss_hash);
 		values[2] = Int32GetDatum(ncols);
 		values[3] = Int32GetDatum(n_batch);
-		values[4] = Int32GetDatum(state_t);
 
 		if (ncols > 0){
-			values[5] = PointerGetDatum(form_matrix(matrix, n_batch, ncols));
-			values[7] = PointerGetDatum(form_matrix(W1, WIDTH_1, ncols));
-			values[8] = PointerGetDatum(form_matrix(W1_m, WIDTH_1, ncols));
-			values[9] = PointerGetDatum(form_matrix(W1_v, WIDTH_1, ncols));
-			values[25] = PointerGetDatum(form_int_vector(hashes, ncols));
+			values[4] = PointerGetDatum(form_matrix(matrix, n_batch, ncols));
+			values[6] = PointerGetDatum(form_matrix(W1, WIDTH_1, ncols));
+			values[7] = PointerGetDatum(form_matrix(W1_m, WIDTH_1, ncols));
+			values[8] = PointerGetDatum(form_matrix(W1_v, WIDTH_1, ncols));
+			values[24] = PointerGetDatum(form_int_vector(hashes, ncols));
 		}
 		else{
-			isnull[5] = true;
+			isnull[4] = true;
+			isnull[6] = true;
 			isnull[7] = true;
 			isnull[8] = true;
-			isnull[9] = true;
-			isnull[25] = true;
+			isnull[24] = true;
 		}
-		values[6] = PointerGetDatum(form_vector(targets, n_batch));
+		values[5] = PointerGetDatum(form_vector(targets, n_batch));
 
-		values[10] = PointerGetDatum(form_matrix(W2, WIDTH_2, WIDTH_1));
-		values[11] = PointerGetDatum(form_matrix(W2_m, WIDTH_2, WIDTH_1));
-		values[12] = PointerGetDatum(form_matrix(W2_v, WIDTH_2, WIDTH_1));
-		values[13] = PointerGetDatum(form_vector(W3, WIDTH_2));
-		values[14] = PointerGetDatum(form_vector(W3_m, WIDTH_2));
-		values[15] = PointerGetDatum(form_vector(W3_v, WIDTH_2));
-		values[16] = PointerGetDatum(form_vector(b1, WIDTH_1));
-		values[17] = PointerGetDatum(form_vector(b1_m, WIDTH_1));
-		values[18] = PointerGetDatum(form_vector(b1_v, WIDTH_1));
-		values[19] = PointerGetDatum(form_vector(b2, WIDTH_2));
-		values[20] = PointerGetDatum(form_vector(b2_m, WIDTH_2));
-		values[21] = PointerGetDatum(form_vector(b2_v, WIDTH_2));
-		values[22] = Float8GetDatum(b3);
-		values[23] = Float8GetDatum(b3_m);
-		values[24] = Float8GetDatum(b3_v);
+		values[9] = PointerGetDatum(form_matrix(W2, WIDTH_2, WIDTH_1));
+		values[10] = PointerGetDatum(form_matrix(W2_m, WIDTH_2, WIDTH_1));
+		values[11] = PointerGetDatum(form_matrix(W2_v, WIDTH_2, WIDTH_1));
+		values[12] = PointerGetDatum(form_vector(W3, WIDTH_2));
+		values[13] = PointerGetDatum(form_vector(W3_m, WIDTH_2));
+		values[14] = PointerGetDatum(form_vector(W3_v, WIDTH_2));
+		values[15] = PointerGetDatum(form_vector(b1, WIDTH_1));
+		values[16] = PointerGetDatum(form_vector(b1_m, WIDTH_1));
+		values[17] = PointerGetDatum(form_vector(b1_v, WIDTH_1));
+		values[18] = PointerGetDatum(form_vector(b2, WIDTH_2));
+		values[19] = PointerGetDatum(form_vector(b2_m, WIDTH_2));
+		values[20] = PointerGetDatum(form_vector(b2_v, WIDTH_2));
+		values[21] = Float8GetDatum(b3);
+		values[22] = Float8GetDatum(b3_m);
+		values[23] = Float8GetDatum(b3_v);
 		tuple = heap_form_tuple(tuple_desc, values, isnull);
 		PG_TRY();
 		{
@@ -615,22 +613,39 @@ update_fss(int fss_hash, int ncols, int n_batches, int *hashes, double **matrix,
 		heap_deform_tuple(tuple, aqo_data_heap->rd_att, values, isnull);
 
 		values[2] = Int32GetDatum(ncols);
+		values[3] = Int32GetDatum(n_batch);
 
 		if (ncols > 0){
-			values[3] = PointerGetDatum(form_matrix(W1, WIDTH_1, ncols));
-			values[9] = PointerGetDatum(form_int_vector(hashes, ncols));
+			values[4] = PointerGetDatum(form_matrix(matrix, n_batch, ncols));
+			values[6] = PointerGetDatum(form_matrix(W1, WIDTH_1, ncols));
+			values[7] = PointerGetDatum(form_matrix(W1_m, WIDTH_1, ncols));
+			values[8] = PointerGetDatum(form_matrix(W1_v, WIDTH_1, ncols));
+			values[24] = PointerGetDatum(form_int_vector(hashes, ncols));
 		}
 		else{
-			isnull[3] = true;
-			isnull[9] = true;
+			isnull[4] = true;
+			isnull[6] = true;
+			isnull[7] = true;
+			isnull[8] = true;
+			isnull[24] = true;
 		}
+		values[5] = PointerGetDatum(form_vector(targets, n_batch));
 
-		values[4] = PointerGetDatum(form_matrix(W2, WIDTH_2, WIDTH_1));
-		values[5] = PointerGetDatum(form_vector(W3, WIDTH_2));
-		values[6] = PointerGetDatum(form_vector(b1, WIDTH_1));
-		values[7] = PointerGetDatum(form_vector(b2, WIDTH_2));
-		values[8] = Float8GetDatum(b3);
-		values[10] = Int32GetDatum(time_in_mills);
+		values[9] = PointerGetDatum(form_matrix(W2, WIDTH_2, WIDTH_1));
+		values[10] = PointerGetDatum(form_matrix(W2_m, WIDTH_2, WIDTH_1));
+		values[11] = PointerGetDatum(form_matrix(W2_v, WIDTH_2, WIDTH_1));
+		values[12] = PointerGetDatum(form_vector(W3, WIDTH_2));
+		values[13] = PointerGetDatum(form_vector(W3_m, WIDTH_2));
+		values[14] = PointerGetDatum(form_vector(W3_v, WIDTH_2));
+		values[15] = PointerGetDatum(form_vector(b1, WIDTH_1));
+		values[16] = PointerGetDatum(form_vector(b1_m, WIDTH_1));
+		values[17] = PointerGetDatum(form_vector(b1_v, WIDTH_1));
+		values[18] = PointerGetDatum(form_vector(b2, WIDTH_2));
+		values[19] = PointerGetDatum(form_vector(b2_m, WIDTH_2));
+		values[20] = PointerGetDatum(form_vector(b2_v, WIDTH_2));
+		values[21] = Float8GetDatum(b3);
+		values[22] = Float8GetDatum(b3_m);
+		values[23] = Float8GetDatum(b3_v);
 		nw_tuple = heap_modify_tuple(tuple, tuple_desc,
 									 values, isnull, replace);
 		if (my_simple_heap_update(aqo_data_heap, &(nw_tuple->t_self), nw_tuple,
