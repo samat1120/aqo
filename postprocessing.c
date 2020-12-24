@@ -45,10 +45,8 @@ static void nn_init (int ncols, double **W1, double **W2, double *W3, double *b1
 static void
 batching(int n_batches, int n_cols, int to_add, double **matrix, double **samples, double *targets, double *labels, double *features, double target);
 
-static void atomic_fss_learn_step(int fss_hash,
-								double **W1, double **W2, double *W3, double *b1, double *b2, double b3,
-								double *features, double target,
-								int nfeatures, int nrels, int *rels, int *sorted_clauses);
+static void atomic_fss_learn_step(int fss_hash,double *features, double target,
+					int nfeatures, int nrels, int *rels, int *sorted_clauses);
 static void learn_sample(List *clauselist,
 			 List *selectivities,
 			 List *relidslist,
@@ -126,7 +124,6 @@ batching(int n_batches, int n_cols, int to_add, double **matrix, double **sample
  */
 static void 
 atomic_fss_learn_step(int fss_hash,
-					  double **W1, double **W2, double *W3, double *b1, double *b2, double b3,
 					  double *features, double target,
 					  int nfeatures, int nrels, int *rels, int *sorted_clauses)
 {
