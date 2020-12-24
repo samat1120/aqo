@@ -122,9 +122,9 @@ predict_for_relation(List *restrict_clauses, List *selectivities,
 		result = -1;
 	}
 	for (i = 0; i < WIDTH_2; ++i){
-	     W2[i] = palloc(sizeof(double) * WIDTH_1);
-	     W2_m[i] = palloc(sizeof(double) * WIDTH_1);
-	     W2_v[i] = palloc(sizeof(double) * WIDTH_1);}
+	     pfree(W2[i]);
+	     pfree(W2_m[i]);
+	     pfree(W2_v[i]);}
 
 	if (nfeatures>0){
 		pfree(features);
