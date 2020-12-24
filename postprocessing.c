@@ -231,6 +231,7 @@ atomic_fss_learn_step(int fss_hash,
 				++to_add;
 			}
 		}
+		new_hashes = repalloc(new_hashes, (ncols+to_add) * sizeof(*new_hashes));
 		feats = repalloc(feats, (ncols+to_add) * sizeof(*feats));
 		if (to_add>0){
 			srand(1);
@@ -258,7 +259,7 @@ atomic_fss_learn_step(int fss_hash,
 			      new_W1_m, new_W1_v, b1_m, b1_v, W2_m, W2_v, b2_m,
 			      b2_v, W3_m, W3_v, b3_m, b3_v,
 			      0, samples, labels, to_add);
-			update_fss(fss_hash, n_batches, (ncols+to_add), hashes, samples, labels, 
+			update_fss(fss_hash, n_batches, (ncols+to_add), new_hashes, samples, labels, 
 				   new_W1, b1, W2, b2, W3, b3,
 				   new_W1_m, new_W1_v, b1_m, b1_v, W2_m, W2_v, b2_m,
 				   b2_v, W3_m, W3_v, b3_m, b3_v);
