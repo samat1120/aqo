@@ -239,7 +239,7 @@ extern double auto_tuning_convergence_error;
 #define N_ITERS (100) // number of iterations
 
 /* Max number of matrix rows - max number of possible neighbors. */
-#define	aqo_K	(30)
+#define	n_all_samples	(100)
 
 extern const double object_selection_prediction_threshold;
 extern const double object_selection_threshold;
