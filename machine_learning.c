@@ -34,7 +34,7 @@ static void zero_grad(int n_batch, int n_cols, double **output1, double **output
 static void optim_step(int n_batch, int n_cols, double **W1, double *b1, double **W2, double *b2, double *W3, double *b3,
                       double **gradW1, double *gradb1, double **gradW2, double *gradb2, double *gradW3, double *gradb3,
                       double **W1_m, double **W1_v, double *b1_m, double *b1_v, double **W2_m, double **W2_v, double *b2_m, double *b2_v, double *W3_m, double *W3_v, double *b3_m, double *b3_v,
-                      int *state_t
+                      int *state_t, int to_add
                       )
 {
     int i,j;
@@ -61,6 +61,14 @@ static void optim_step(int n_batch, int n_cols, double **W1, double *b1, double 
         }
         (*b3_m) = (*gradb3);
         (*b3_v) = pow((*gradb3),2);
+    }
+    if (to_add!=0){
+       for (i=0;i<WIDTH_1;i++){
+           for (j=n_cols-to_add-1;j<n_cols;j++){
+               W1_m[i][j] = gradW1[i][j];
+               W1_v[i][j] = pow(gradW1[i][j],2);
+           }
+       }
     }
     (*state_t)++;
     for (i=0;i<WIDTH_1;i++){
