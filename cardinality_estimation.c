@@ -37,19 +37,23 @@ predict_for_relation(List *restrict_clauses, List *selectivities,
 	double	*W2[WIDTH_2];
 	double	*W2_m[WIDTH_2];
 	double	*W2_v[WIDTH_2];
-	double	*W3;
-	double	*W3_m;
-	double	*W3_v;
-	double	*b1;
-	double	*b1_m;
-	double	*b1_v;
-	double	*b2;
-	double	*b2_m;
-	double	*b2_v;
+	double	W3[WIDTH_2];
+	double	W3_m[WIDTH_2];
+	double	W3_v[WIDTH_2];
+	double	b1[WIDTH_1];
+	double	b1_m[WIDTH_1];
+	double	b1_v[WIDTH_1];
+	double	b2[WIDTH_2];
+	double	b2_m[WIDTH_2];
+	double	b2_v[WIDTH_2];
 	double	*feats, *fs;
 	double	b3;
 	double	b3_m;
 	double	b3_v;
+	for (i = 0; i < WIDTH_2; ++i){
+	     W2[i] = palloc(sizeof(double) * WIDTH_1);
+	     W2_m[i] = palloc(sizeof(double) * WIDTH_1);
+	     W2_v[i] = palloc(sizeof(double) * WIDTH_1);}
 	double	*features;
 	double stdv;
 	int	*rels;
@@ -61,20 +65,7 @@ predict_for_relation(List *restrict_clauses, List *selectivities,
 
 	*fss_hash = get_fss_for_object(restrict_clauses, selectivities, relids,
 														&nfeatures, &nrels, &features, &rels, &sorted_clauses);
-
-	for (i = 0; i < WIDTH_2; ++i){
-		W2[i] = palloc0(sizeof(**W2) * WIDTH_1);
-		W2_m[i] = palloc0(sizeof(**W2) * WIDTH_1);
-		W2_v[i] = palloc0(sizeof(**W2) * WIDTH_1);}
-	W3 = palloc0(sizeof(*W3) * WIDTH_2);
-	W3_m = palloc0(sizeof(*W3) * WIDTH_2);
-	W3_v = palloc0(sizeof(*W3) * WIDTH_2);
-	b1 = palloc0(sizeof(*b1) * WIDTH_1);
-	b1_m = palloc0(sizeof(*b1) * WIDTH_1);
-	b1_v = palloc0(sizeof(*b1) * WIDTH_1);
-	b2 = palloc0(sizeof(*b2) * WIDTH_2);
-	b2_m = palloc0(sizeof(*b2) * WIDTH_2);
-	b2_v = palloc0(sizeof(*b2) * WIDTH_2);
+	
 	hshes = palloc0(sizeof(*hshes) * (nfeatures+nrels));
 	fs = palloc0(sizeof(*fs) * (nfeatures+nrels));
 	for (i=0;i<nfeatures;i++){
@@ -102,7 +93,6 @@ predict_for_relation(List *restrict_clauses, List *selectivities,
 				++to_add;
 			}
 		}
-		feats = repalloc(feats, (ncols+to_add) * sizeof(*feats));
 		result = neural_predict (ncols, W1, b1, W2, b2, W3, b3, feats);
 		for (j = ncols; j < (ncols+to_add); ++j){
 			result = result + feats[j];
@@ -116,9 +106,10 @@ predict_for_relation(List *restrict_clauses, List *selectivities,
 		    for (int i = 0; i < n_batch; ++i)
 		        pfree(matrix[i]);
 		}
-		
-		pfree(feats);
-		pfree(hashes);
+		if ((ncols+nfeatures+nrels)>0)
+		    pfree(feats);
+		if (ncols>0)
+		    pfree(hashes);
 	}
 	else
 	{
@@ -130,17 +121,20 @@ predict_for_relation(List *restrict_clauses, List *selectivities,
 		 */
 		result = -1;
 	}
+	for (i = 0; i < WIDTH_2; ++i){
+	     W2[i] = palloc(sizeof(double) * WIDTH_1);
+	     W2_m[i] = palloc(sizeof(double) * WIDTH_1);
+	     W2_v[i] = palloc(sizeof(double) * WIDTH_1);}
 
-	pfree(features);
-	pfree(rels);
-	pfree(sorted_clauses);
-	for (i = 0; i < WIDTH_2; ++i)
-		pfree(W2[i]);
-	pfree(W3);
-	pfree(b1);
-	pfree(b2);
-	pfree(hshes);
-	pfree(fs);
+	if (nfeatures>0){
+		pfree(features);
+		pfree(sorted_clauses);}
+	if (nrels>0)
+		pfree(rels);
+	if ((nfeatures+nrels)>0){
+		pfree(hshes);
+		pfree(fs);
+	}
 
 	if (result < 0)
 		return -1;
