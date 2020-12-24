@@ -103,33 +103,20 @@ predict_for_relation(List *restrict_clauses, List *selectivities,
 			}
 		}
 		feats = repalloc(feats, (ncols+to_add) * sizeof(*feats));
-		//new_W1 = (double**)palloc0(sizeof(double*) * WIDTH_1);
-		//srand(1);
-		//stdv = 1 / sqrt(ncols+to_add);
-		//for (i = 0; i < WIDTH_1; ++i)
-			//new_W1[i] = palloc0(sizeof(**new_W1) * (ncols+to_add));
-		//for (j = 0; j < (ncols+to_add); ++j){
-			//for (i = 0; i < WIDTH_1; ++i){
-				//new_W1[i][j] = (stdv + stdv)*(rand()/(double)RAND_MAX) - stdv;
-			//}
-		//}
-		//for (i = 0; i < WIDTH_1; ++i){
-			//for (j = 0; j < ncols; ++j){
-				//new_W1[i][j] = W1[i][j];
-			//}
-		//}
 		result = neural_predict (ncols, W1, b1, W2, b2, W3, b3, feats);
 		for (j = ncols; j < (ncols+to_add); ++j){
 			result = result + feats[j];
 		}
-		if (ncols > 0)
-				for (i = 0; i < WIDTH_1; ++i){
-					pfree(W1[i]);
-				}
-		//if ((ncols+to_add) > 0)
-				//for (i = 0; i < WIDTH_1; ++i){
-					//pfree(new_W1[i]);
-				//}
+		if (ncols > 0){
+		    for (i = 0; i < WIDTH_1; ++i){
+			pfree(W1[i]);
+			pfree(W1_m[i]);
+			pfree(W1_v[i]);
+		    }
+		    for (int i = 0; i < n_batch; ++i)
+		        pfree(matrix[i]);
+		}
+		
 		pfree(feats);
 		pfree(hashes);
 	}
