@@ -191,10 +191,12 @@ atomic_fss_learn_step(int fss_hash,
 			   W1, b1, W2, b2, W3, b3,
 			   W1_m, W1_v, b1_m, b1_v, W2_m, W2_v, b2_m,
                            b2_v, W3_m, W3_v, b3_m, b3_v);
-		if ((nfeatures+nrels) > 0)
+		if ((nfeatures+nrels) > 0){
 			for (i = 0; i < WIDTH_1; ++i)
 				pfree(W1[i]);
-		pfree(W1);
+			pfree(samples[0]);
+		}
+		
 		pfree(hashes);
 		pfree(feats);
 	}
@@ -281,12 +283,15 @@ atomic_fss_learn_step(int fss_hash,
 				   W1_m, W1_v, b1_m, b1_v, W2_m, W2_v, b2_m,
 				   b2_v, W3_m, W3_v, b3_m, b3_v;
 		}
-		if (ncols > 0)
+		if (ncols > 0){
 		    for (i = 0; i < WIDTH_1; ++i){
 			pfree(W1[i]);
 			pfree(W1_m[i]);
 			pfree(W1_v[i]);
 		    }
+		    for (int i = 0; i < n_batch; ++i)
+		        pfree(matrix[i]);
+		}
 		pfree(hshes);
 		pfree(hashes);
 		pfree(fs);
