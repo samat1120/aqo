@@ -197,8 +197,9 @@ atomic_fss_learn_step(int fss_hash,
 			pfree(samples[0]);
 		}
 		
-		pfree(hashes);
-		pfree(feats);
+		if ((ncols+to_add)>0){
+			pfree(feats);
+			pfree(hashes);}
 	}
 	else{
 		hshes = palloc0(sizeof(*hshes) * (nfeatures+nrels));
@@ -293,11 +294,15 @@ atomic_fss_learn_step(int fss_hash,
 		    for (int i = 0; i < n_batch; ++i)
 		        pfree(matrix[i]);
 		}
-		pfree(hshes);
-		pfree(hashes);
-		pfree(fs);
-		pfree(feats);
-		pfree(new_hashes);
+		}
+		if ((nfeatures+nrels){
+			pfree(hshes);
+			pfree(fs);}
+		if (ncols>0)
+			pfree(hashes);
+		if ((ncols+to_add)>0){
+			pfree(feats);
+			pfree(new_hashes);}
 	}
 }
 
