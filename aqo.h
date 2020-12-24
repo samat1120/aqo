@@ -358,7 +358,7 @@ extern void
 neural_learn (int n_batch, int n_cols, double **W1, double *b1, double **W2, double *b2, double *W3, double *b3,
                       double **W1_m, double **W1_v, double *b1_m, double *b1_v, double **W2_m, double **W2_v, double *b2_m,
                       double *b2_v, double *W3_m, double *W3_v, double *b3_m, double *b3_v,
-                      int *state_t, double **features, double *targets, double to_add);
+                      int state_t, double **features, double *targets, double to_add);
 
 /* Automatic query tuning */
 void		automatical_query_tuning(int query_hash, QueryStat * stat);
