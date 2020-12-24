@@ -24,7 +24,7 @@
 static void optim_step(int n_batch, int n_cols, double **W1, double *b1, double **W2, double *b2, double *W3, double *b3,
                       double **gradW1, double *gradb1, double **gradW2, double *gradb2, double *gradW3, double *gradb3,
                       double **W1_m, double **W1_v, double *b1_m, double *b1_v, double **W2_m, double **W2_v, double *b2_m, double *b2_v, double *W3_m, double *W3_v, double *b3_m, double *b3_v,
-                      int *state_t
+                      int *state_t, int to_add
                       );
 
 static void zero_grad(int n_batch, int n_cols, double **output1, double **output2, double **output3, double **output4, double *output5,
@@ -181,7 +181,7 @@ void
 neural_learn (int n_batch, int n_cols, double **W1, double *b1, double **W2, double *b2, double *W3, double *b3,
                       double **W1_m, double **W1_v, double *b1_m, double *b1_v, double **W2_m, double **W2_v, double *b2_m,
                       double *b2_v, double *W3_m, double *W3_v, double *b3_m, double *b3_v,
-                      int *state_t, double **features, double *targets)
+                      int *state_t, double **features, double *targets, double to_add)
 {
     int i,j,k, iter;
     double elem, output;
@@ -305,11 +305,18 @@ neural_learn (int n_batch, int n_cols, double **W1, double *b1, double **W2, dou
         for (i=0;i<WIDTH_1;i++)
             for (j=0;j<n_batch;j++)
                 gradb1[i]=gradb1[i]+gradInput2[j][i];
-        optim_step(n_batch, n_cols, W1, b1, W2, b2, W3, b3,
-                      gradW1, gradb1, gradW2, gradb2, gradW3, &gradb3,
-                      W1_m, W1_v, b1_m, b1_v, W2_m, W2_v, b2_m, b2_v, W3_m, W3_v, b3_m, b3_v,
-                      state_t
-                      );
+        if (iter==0 && to_add!=0)
+          optim_step(n_batch, n_cols, W1, b1, W2, b2, W3, b3,
+                        gradW1, gradb1, gradW2, gradb2, gradW3, &gradb3,
+                        W1_m, W1_v, b1_m, b1_v, W2_m, W2_v, b2_m, b2_v, W3_m, W3_v, b3_m, b3_v,
+                        state_t, to_add
+                        );
+      else
+          optim_step(n_batch, n_cols, W1, b1, W2, b2, W3, b3,
+                        gradW1, gradb1, gradW2, gradb2, gradW3, &gradb3,
+                        W1_m, W1_v, b1_m, b1_v, W2_m, W2_v, b2_m, b2_v, W3_m, W3_v, b3_m, b3_v,
+                        state_t, 0
+                        );
         }
         if (WIDTH_1>0)
             for (i=0;i<n_batch;i++){
