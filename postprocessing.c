@@ -40,7 +40,7 @@ static char *PlanStateInfo = "PlanStateInfo";
 
 
 /* Query execution statistics collecting utilities */
-static void nn_init (int ncols, double **W1, double **W2, double *W3, double *b1, double *b2, double b3);
+static void nn_init (int ncols, double **W1, double **W2, double *W3, double *b1, double *b2, double *b3);
 
 static void
 batching(int n_batches, int n_cols, int to_add, double **matrix, double **samples, double *targets, double *labels, double *features, double target);
