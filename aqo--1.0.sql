@@ -31,7 +31,6 @@ CREATE TABLE public.aqo_data (
 	fsspace_hash	int NOT NULL,
 	nfeatures		int NOT NULL,
 	n_batch                 int NOT NULL,
-	state_t                 int NOT NULL,
 	matrix                  double precision[][],
 	targets                 double precision[],
 	W1                      double precision[][],
