@@ -195,11 +195,9 @@ atomic_fss_learn_step(int fss_hash,
 			for (i = 0; i < WIDTH_1; ++i)
 				pfree(W1[i]);
 			pfree(samples[0]);
-		}
-		
-		if ((ncols+to_add)>0){
 			pfree(feats);
-			pfree(hashes);}
+			pfree(hashes);
+		}
 	}
 	else{
 		hshes = palloc0(sizeof(*hshes) * (nfeatures+nrels));
