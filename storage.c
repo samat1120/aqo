@@ -360,7 +360,7 @@ add_query_text(int query_hash, const char *query_text)
  *			objects in the given feature space
  */
 bool
-load_fss(int fss_hash, int *ncols, int *n_batches, int **hashes, double **matrix, double *targets,  double **W1, double **W1_m, double **W1_v, double **W2, double **W2_m, double **W2_v, double *W3, double *W3_m, double *W3_v, double *b1, double *b1_m, double *b1_v, double *b2, double *b2_m, double *b2_v, double *b3, double *b3_m, , double *b3_v, int *step_layer1, int *steps)
+load_fss(int fss_hash, int *ncols, int *n_batches, int **hashes, double **matrix, double *targets,  double **W1, double **W1_m, double **W1_v, double **W2, double **W2_m, double **W2_v, double *W3, double *W3_m, double *W3_v, double *b1, double *b1_m, double *b1_v, double *b2, double *b2_m, double *b2_v, double *b3, double *b3_m, , double *b3_v, int **step_layer1, int *steps)
 {
 	RangeVar   *aqo_data_table_rv;
 	Relation	aqo_data_heap;
@@ -430,13 +430,14 @@ load_fss(int fss_hash, int *ncols, int *n_batches, int **hashes, double **matrix
 
 		if (*ncols > 0){
 			for (int i = 0; i < WIDTH_1; ++i){
-				W1[i] = palloc0(sizeof(double) * (*ncols));
-				W1_m[i] = palloc0(sizeof(double) * (*ncols));
-				W1_v[i] = palloc0(sizeof(double) * (*ncols));
+				W1[i] = palloc0(sizeof(**W1) * (*ncols));
+				W1_m[i] = palloc0(sizeof(**W1_m) * (*ncols));
+				W1_v[i] = palloc0(sizeof(**W1_v) * (*ncols));
 			}
 			for (int i = 0; i < n_batch; ++i)
-				matrix[i]=palloc0(sizeof(double) * (*ncols));
-			*hashes = palloc0(sizeof(*double) * (*ncols));
+				matrix[i]=palloc0(sizeof(**matrix) * (*ncols));
+			*hashes = palloc0(sizeof(**hashes) * (*ncols));
+			*step_layer1 = palloc0(sizeof(**step_layer1) * (*ncols));
 		}
 
 		if (*ncols > 0)
