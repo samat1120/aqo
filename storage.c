@@ -495,7 +495,7 @@ load_fss(int fss_hash, int *ncols, int *n_batches, int **hashes, double **matrix
  * 'targets' is vector of size 'nrows'
  */
 bool
-update_fss(int fss_hash, int ncols, int n_batches, int *hashes, double **matrix, double *targets,  double **W1, double **W1_m, double **W1_v, double **W2, double **W2_m, double **W2_v, double *W3, double *W3_m, double *W3_v, double *b1, double *b1_m, double *b1_v, double *b2, double *b2_m, double *b2_v, double *b3, double *b3_m, , double *b3_v, int *step_layer1, int *steps)
+update_fss(int fss_hash, int ncols, int n_batches, int *hashes, double **matrix, double *targets,  double **W1, double **W1_m, double **W1_v, double **W2, double **W2_m, double **W2_v, double *W3, double *W3_m, double *W3_v, double *b1, double *b1_m, double *b1_v, double *b2, double *b2_m, double *b2_v, double *b3, double *b3_m, , double *b3_v, int *step_layer1, int steps)
 {
 	RangeVar   *aqo_data_table_rv;
 	Relation	aqo_data_heap;
