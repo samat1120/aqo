@@ -21,101 +21,24 @@
 
 #include "aqo.h"
 
-static void optim_step(int n_batch, int n_cols, double **W1, double *b1, double **W2, double *b2, double *W3, double *b3,
-                      double **gradW1, double *gradb1, double **gradW2, double *gradb2, double *gradW3, double *gradb3,
-                      double **W1_m, double **W1_v, double *b1_m, double *b1_v, double **W2_m, double **W2_v, double *b2_m, double *b2_v, double *W3_m, double *W3_v, double *b3_m, double *b3_v,
-                      int state_t, int to_add
+static void zero_grad(int n_batch, int n_cols,  double **gradInput2,  double **gradInput3,  double **gradInput4,  double **gradInput5,  double *gradInput,
+                        double **gradW1,  double *gradb1,  double **gradW2,  double *gradb2,  double *gradW3,  double *gradb3);
+static void optim_step(int n_batch, int n_cols,  double **W1,  double *b1,  double **W2,  double *b2,  double *W3,  double *b3,
+                       double **gradW1,  double *gradb1,  double **gradW2,  double *gradb2,  double *gradW3,  double *gradb3,
+                       double **W1_m,  double **W1_v,  double *b1_m,  double *b1_v,  double **W2_m,  double **W2_v,  double *b2_m,  double *b2_v,  double *W3_m,  double *W3_v,  double *b3_m, double *b3_v,
+                      int *step_layer1, int *steps
                       );
 
-static void zero_grad(int n_batch, int n_cols, double **output1, double **output2, double **output3, double **output4, double *output5,
-                       double **gradInput2, double **gradInput3, double **gradInput4, double **gradInput5, double *gradInput,
-                       double **gradW1, double *gradb1, double **gradW2, double *gradb2, double *gradW3, double *gradb3);
-
-static void optim_step(int n_batch, int n_cols, double **W1, double *b1, double **W2, double *b2, double *W3, double *b3,
-                      double **gradW1, double *gradb1, double **gradW2, double *gradb2, double *gradW3, double *gradb3,
-                      double **W1_m, double **W1_v, double *b1_m, double *b1_v, double **W2_m, double **W2_v, double *b2_m, double *b2_v, double *W3_m, double *W3_v, double *b3_m, double *b3_v,
-                      int state_t, int to_add
-                      )
-{
-    int i,j;
-    if (state_t==0){
-        for (i=0;i<WIDTH_1;i++){
-            for (j=0;j<n_cols;j++){
-                W1_m[i][j] = gradW1[i][j];
-                W1_v[i][j] = pow(gradW1[i][j],2);
-            }
-            b1_m[i] = gradb1[i];
-            b1_v[i] = pow(gradb1[i],2);
-        }
-        for (i=0;i<WIDTH_2;i++){
-            for (j=0;j<WIDTH_1;j++){
-                W2_m[i][j] = gradW2[i][j];
-                W2_v[i][j] = pow(gradW2[i][j],2);
-            }
-            b2_m[i] = gradb2[i];
-            b2_v[i] = pow(gradb2[i],2);
-        }
-        for (i=0;i<WIDTH_2;i++){
-            W3_m[i] = gradW3[i];
-            W3_v[i] = pow(gradW3[i],2);
-        }
-        (*b3_m) = (*gradb3);
-        (*b3_v) = pow((*gradb3),2);
-    }
-    if (to_add!=0){
-       for (i=0;i<WIDTH_1;i++){
-           for (j=n_cols-to_add-1;j<n_cols;j++){
-               W1_m[i][j] = gradW1[i][j];
-               W1_v[i][j] = pow(gradW1[i][j],2);
-           }
-       }
-    }
-    for (i=0;i<WIDTH_1;i++){
-        for (j=0;j<n_cols;j++){
-            W1_m[i][j] = beta_1*W1_m[i][j]+(1-beta_1)*gradW1[i][j];
-            W1_v[i][j] = beta_2*W1_v[i][j]+(1-beta_2)*pow(gradW1[i][j],2);
-            W1[i][j] = W1[i][j] - lr * W1_m[i][j] / (pow(W1_v[i][j],2) + eps);
-        }
-        b1_m[i] = beta_1*b1_m[i]+(1-beta_1)*gradb1[i];
-        b1_v[i] = beta_2*b1_v[i]+(1-beta_2)*pow(gradb1[i],2);
-        b1[i] = b1[i] - lr * b1_m[i] / (pow(b1_v[i],2) + eps);
-    }
-    for (i=0;i<WIDTH_2;i++){
-        for (j=0;j<WIDTH_1;j++){
-            W2_m[i][j] = beta_1*W2_m[i][j]+(1-beta_1)*gradW2[i][j];
-            W2_v[i][j] = beta_2*W2_v[i][j]+(1-beta_2)*pow(gradW2[i][j],2);
-            W2[i][j] = W2[i][j] - lr * W2_m[i][j] / (pow(W2_v[i][j],2) + eps);
-        }
-        b2_m[i] = beta_1*b2_m[i]+(1-beta_1)*gradb2[i];
-        b2_v[i] = beta_2*b2_v[i]+(1-beta_2)*pow(gradb2[i],2);
-        b2[i] = b2[i] - lr * b2_m[i] / (pow(b2_v[i],2) + eps);
-    }
-    for (i=0;i<WIDTH_2;i++){
-        W3_m[i] = beta_1*W3_m[i]+(1-beta_1)*gradW3[i];
-        W3_v[i] = beta_2*W3_v[i]+(1-beta_2)*pow(gradW3[i],2);
-        W3[i] = W3[i] - lr * W3_m[i] / (pow(W3_v[i],2) + eps);
-    }
-    (*b3_m) = beta_1*(*b3_m)+(1-beta_1)*(*gradb3);
-    (*b3_v) = beta_2*(*b3_v)+(1-beta_2)*pow((*gradb3),2);
-    (*b3) = (*b3) - lr * (*b3_m) / (pow((*b3_v),2) + eps);
-}
-
-static void zero_grad(int n_batch, int n_cols, double **output1, double **output2, double **output3, double **output4, double *output5,
-                       double **gradInput2, double **gradInput3, double **gradInput4, double **gradInput5, double *gradInput,
-                       double **gradW1, double *gradb1, double **gradW2, double *gradb2, double *gradW3, double *gradb3){
+static void zero_grad(int n_batch, int n_cols,  double **gradInput2,  double **gradInput3,  double **gradInput4,  double **gradInput5,  double *gradInput,
+                        double **gradW1,  double *gradb1,  double **gradW2,  double *gradb2,  double *gradW3,  double *gradb3){
     int i,j;
     for (i=0;i<n_batch;i++){
          for (j=0;j<WIDTH_1;++j){
-             output1[i][j] = 0;
-             output2[i][j] = 0;
              gradInput2[i][j] = 0;
              gradInput3[i][j] = 0;}
              for (j=0;j<WIDTH_2;++j){
              gradInput4[i][j] = 0;
-             gradInput5[i][j] = 0;
-             output3[i][j] = 0;
-             output4[i][j] = 0;}
-         output5[i] = 0;
+             gradInput5[i][j] = 0;}
          gradInput[i]=0;
     }
 
@@ -128,65 +51,66 @@ static void zero_grad(int n_batch, int n_cols, double **output1, double **output
             gradW2[i][j] = 0;
         gradb2[i] = 0;
         gradW3[i] = 0;}
-    gradb3 = 0;
+    (*gradb3) = 0;
 }
 
-double
-neural_predict (int nfeatures, double **W1, double *b1, double **W2, double *b2, double *W3, double b3, double *feature) //prediction
+static void optim_step(int n_batch, int n_cols,  double **W1,  double *b1,  double **W2,  double *b2,  double *W3,  double *b3,
+                       double **gradW1,  double *gradb1,  double **gradW2,  double *gradb2,  double *gradW3,  double *gradb3,
+                       double **W1_m,  double **W1_v,  double *b1_m,  double *b1_v,  double **W2_m,  double **W2_v,  double *b2_m,  double *b2_v,  double *W3_m,  double *W3_v,  double *b3_m, double *b3_v,
+                      int *step_layer1, int *steps
+                      )
 {
-    double *out1;
-    double *out2;
-    double *out3;
-    double *out4;
-    double out5;
-    out1 = palloc0(WIDTH_1 * sizeof(*out1));
-    for (int i = 0; i < WIDTH_1; ++i){
-        for (int j = 0; j < nfeatures; ++j)
-            out1[i] = out1[i]+feature[j]*W1[i][j];
-        out1[i]=out1[i]+b1[i];
+    int i,j;
+    double bias_correction1, bias_correction2;
+    for (i=0;i<n_cols;i++)
+        step_layer1[i] = step_layer1[i] + 1;
+    (*steps) = (*steps) + 1;
+    for (j=0;j<n_cols;j++){
+        bias_correction1 = 1 / (1 - pow(beta_1, step_layer1[j]));
+        bias_correction2 = 1 / (1 - pow(beta_2, step_layer1[j]));
+        for (i=0;i<WIDTH_1;i++){
+            W1_m[i][j] = beta_1*W1_m[i][j]+(1-beta_1)*gradW1[i][j];
+            W1_v[i][j] = beta_2*W1_v[i][j]+(1-beta_2)*pow(gradW1[i][j],2);
+            W1[i][j] = W1[i][j] - (lr * bias_correction1 / sqrt(bias_correction2)) * W1_m[i][j] / (sqrt(W1_v[i][j]) + eps);
+        }
     }
-    out2 = palloc0(WIDTH_1 * sizeof(*out2)); // vector for the output of Leaky ReLU activation function in the first layer
-    for (int i = 0; i < WIDTH_1; ++i){
-        if (out1[i]<out1[i]*slope)
-            out2[i]=out1[i]*slope;
-        else
-            out2[i]=out1[i];
+    bias_correction1 = 1 / (1 - pow(beta_1, (*steps)));
+    bias_correction2 = 1 / (1 - pow(beta_2, (*steps)));
+    for (i=0;i<WIDTH_1;i++){
+        b1_m[i] = beta_1*b1_m[i]+(1-beta_1)*gradb1[i];
+        b1_v[i] = beta_2*b1_v[i]+(1-beta_2)*pow(gradb1[i],2);
+        b1[i] = b1[i] - (lr * bias_correction1 / sqrt(bias_correction2)) * b1_m[i] / (sqrt(b1_v[i]) + eps);}
+    for (i=0;i<WIDTH_2;i++){
+        for (j=0;j<WIDTH_1;j++){
+            W2_m[i][j] = beta_1*W2_m[i][j]+(1-beta_1)*gradW2[i][j];
+            W2_v[i][j] = beta_2*W2_v[i][j]+(1-beta_2)*pow(gradW2[i][j],2);
+            W2[i][j] = W2[i][j] - (lr * bias_correction1 / sqrt(bias_correction2)) * W2_m[i][j] / (sqrt(W2_v[i][j]) + eps);
+        }
+        b2_m[i] = beta_1*b2_m[i]+(1-beta_1)*gradb2[i];
+        b2_v[i] = beta_2*b2_v[i]+(1-beta_2)*pow(gradb2[i],2);
+        b2[i] = b2[i] - (lr * bias_correction1 / sqrt(bias_correction2)) * b2_m[i] / (sqrt(b2_v[i]) + eps);
     }
-    out3 = palloc0(WIDTH_2 * sizeof(*out3));
-    for (int i = 0; i < WIDTH_2; ++i){
-        for (int j = 0; j < WIDTH_1; ++j)
-            out3[i]=out3[i]+out2[j]*W2[i][j];
-        out3[i]=out3[i]+b2[i];
+    for (i=0;i<WIDTH_2;i++){
+        W3_m[i] = beta_1*W3_m[i]+(1-beta_1)*gradW3[i];
+        W3_v[i] = beta_2*W3_v[i]+(1-beta_2)*pow(gradW3[i],2);
+        W3[i] = W3[i] - (lr * bias_correction1 / sqrt(bias_correction2)) * W3_m[i] / (sqrt(W3_v[i]) + eps);
     }
-    out4 = palloc0(WIDTH_2 * sizeof(*out4)); // vector for the output of Leaky ReLU activation function in the second layer
-    for (int i = 0; i < WIDTH_2; ++i){
-        if (out3[i]<out3[i]*slope)
-            out4[i]=out3[i]*slope;
-        else
-            out4[i]=out3[i];
-    }
-    out5=0; //final result (one number)
-    for (int j = 0; j < WIDTH_2; ++j)
-        out5=out5+out4[j]*W3[j];
-    out5=out5+b3;
-    pfree(out1);
-    pfree(out2);
-    pfree(out3);
-    pfree(out4);
-    return out5;
+    (*b3_m) = beta_1*(*b3_m)+(1-beta_1)*(*gradb3);
+    (*b3_v) = beta_2*(*b3_v)+(1-beta_2)*pow((*gradb3),2);
+    (*b3) = (*b3) - (lr * bias_correction1 / sqrt(bias_correction2)) * (*b3_m) / (sqrt((*b3_v)) + eps);
 }
 
 void
-neural_learn (int n_batch, int n_cols, double **W1, double *b1, double **W2, double *b2, double *W3, double *b3,
-                      double **W1_m, double **W1_v, double *b1_m, double *b1_v, double **W2_m, double **W2_v, double *b2_m,
-                      double *b2_v, double *W3_m, double *W3_v, double *b3_m, double *b3_v,
-                      int state_t, double **features, double *targets, double to_add)
+neural_learn (int n_batch, int n_cols,  double **W1,  double *b1,  double **W2,  double *b2,  double *W3,  double *b3,
+                       double **W1_m,  double **W1_v,  double *b1_m,  double *b1_v,  double **W2_m,  double **W2_v,  double *b2_m,
+                       double *b2_v,  double *W3_m,  double *W3_v,  double *b3_m,  double *b3_v,
+                       int *step_layer1, int *steps, double **features, double *targets)
 {
     int i,j,k, iter;
-    double elem, output;
-    double *output1[n_batch], *output2[n_batch], *output3[n_batch], *output4[n_batch], *output5,
-           *gradInput2[n_batch], *gradInput3[n_batch], *gradInput4[n_batch], *gradInput5[n_batch], *gradInput,
-           *gradW1[WIDTH_1], *gradb1, *gradW2[WIDTH_2], *gradb2, *gradW3, gradb3;
+     double elem, output;
+     double *output1[n_batch], *output2[n_batch], *output3[n_batch], *output4[n_batch], output5[n_batch],
+           *gradInput2[n_batch], *gradInput3[n_batch], *gradInput4[n_batch], *gradInput5[n_batch], gradInput[n_batch],
+           *gradW1[WIDTH_1], gradb1[WIDTH_1], *gradW2[WIDTH_2], gradb2[WIDTH_2], gradW3[WIDTH_2], gradb3;
     for (i=0;i<n_batch;i++){
         output1[i] = palloc0(sizeof(**output1) * WIDTH_1);
         output2[i] = palloc0(sizeof(**output2) * WIDTH_1);
@@ -197,20 +121,14 @@ neural_learn (int n_batch, int n_cols, double **W1, double *b1, double **W2, dou
         gradInput4[i] = palloc0(sizeof(**gradInput4) * WIDTH_2);
         gradInput5[i] = palloc0(sizeof(**gradInput5) * WIDTH_2);
     }
-    output5 = palloc0(sizeof(*output5) * n_batch);
-    gradInput = palloc0(sizeof(*gradInput) * n_batch);
     for (i=0;i<WIDTH_1;i++)
         gradW1[i] = palloc0(sizeof(**gradW1) * n_cols);
-    gradb1 = palloc0(sizeof(*gradb1) * WIDTH_1);
     for (i=0;i<WIDTH_2;i++)
         gradW2[i] = palloc0(sizeof(**gradW2) * WIDTH_1);
-    gradb2 = palloc0(sizeof(*gradb2) * WIDTH_2);
-    gradW3 = palloc0(sizeof(*gradW3) * WIDTH_2);
 
 
     for (iter=0;iter<N_ITERS;++iter){
-        zero_grad(n_batch, n_cols, output1, output2, output3, output4, output5,
-                       gradInput2, gradInput3, gradInput4, gradInput5, gradInput,
+        zero_grad(n_batch, n_cols, gradInput2, gradInput3, gradInput4, gradInput5, gradInput,
                        gradW1, gradb1, gradW2, gradb2, gradW3, &gradb3);
 
         for (i=0;i<n_batch;i++)
@@ -245,18 +163,18 @@ neural_learn (int n_batch, int n_cols, double **W1, double *b1, double **W2, dou
             elem=0;
             for (k=0;k<WIDTH_2;k++)
                 elem=elem+output4[i][k]*W3[k];
-            elem=elem+*b3;
+            elem=elem+(*b3);
             output5[i]=elem;
         }
         output=0;
         for (i=0;i<n_batch;i++)
             output=output+pow(output5[i]-targets[i],2);
-        output/=n_batch;
+        output=output/n_batch;
         for (i=0;i<n_batch;i++)
             gradInput[i]=2*(output5[i]-targets[i])/n_batch;
         for (i=0;i<n_batch;i++)
             for (j=0;j<WIDTH_2;j++)
-                gradInput5[i][k] = gradInput[i]*W3[k];
+                gradInput5[i][j] = gradInput[i]*W3[j];
         for (i=0;i<WIDTH_2;i++){
             elem=0;
             for (j=0;j<n_batch;j++)
@@ -304,24 +222,11 @@ neural_learn (int n_batch, int n_cols, double **W1, double *b1, double **W2, dou
         for (i=0;i<WIDTH_1;i++)
             for (j=0;j<n_batch;j++)
                 gradb1[i]=gradb1[i]+gradInput2[j][i];
-        else if (iter==0 && state_t==0)
-          optim_step(n_batch, n_cols, W1, b1, W2, b2, W3, b3,
-                        gradW1, gradb1, gradW2, gradb2, gradW3, &gradb3,
-                        W1_m, W1_v, b1_m, b1_v, W2_m, W2_v, b2_m, b2_v, W3_m, W3_v, b3_m, b3_v,
-                        0, 0
-                        );
-        else if (iter==0 && to_add!=0)
-          optim_step(n_batch, n_cols, W1, b1, W2, b2, W3, b3,
-                        gradW1, gradb1, gradW2, gradb2, gradW3, &gradb3,
-                        W1_m, W1_v, b1_m, b1_v, W2_m, W2_v, b2_m, b2_v, W3_m, W3_v, b3_m, b3_v,
-                        1, to_add
-                        );
-      else
-          optim_step(n_batch, n_cols, W1, b1, W2, b2, W3, b3,
-                        gradW1, gradb1, gradW2, gradb2, gradW3, &gradb3,
-                        W1_m, W1_v, b1_m, b1_v, W2_m, W2_v, b2_m, b2_v, W3_m, W3_v, b3_m, b3_v,
-                        1, 0
-                        );
+        optim_step(n_batch, n_cols, W1, b1, W2, b2, W3, b3,
+                   gradW1, gradb1, gradW2, gradb2, gradW3, &gradb3,
+                   W1_m, W1_v, b1_m, b1_v, W2_m, W2_v, b2_m, b2_v, W3_m, W3_v, b3_m, b3_v,
+                   step_layer1, steps
+                   );
         }
         if (WIDTH_1>0)
             for (i=0;i<n_batch;i++){
@@ -337,20 +242,10 @@ neural_learn (int n_batch, int n_cols, double **W1, double *b1, double **W2, dou
                 pfree(gradInput4[i]);
                 pfree(gradInput5[i]);
             }
-        if (n_batch>0){
-            pfree(output5);
-            pfree(gradInput);
-        }
         if (n_cols>0)
             for (i=0;i<WIDTH_1;i++)
                 pfree(gradW1[i]);
         if (WIDTH_1>0)
-            pfree(gradb1);
-        if (WIDTH_1>0)
             for (i=0;i<WIDTH_2;i++)
                 pfree(gradW2[i]);
-        if (WIDTH_2>0){
-            pfree(gradb2);
-            pfree(gradW3);
-        }
 }
