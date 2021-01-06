@@ -360,7 +360,7 @@ add_query_text(int query_hash, const char *query_text)
  *			objects in the given feature space
  */
 bool
-load_fss(int fss_hash, int *ncols, int *n_batches, int **hashes, double **matrix, double *targets,  double **W1, double **W1_m, double **W1_v, double **W2, double **W2_m, double **W2_v, double *W3, double *W3_m, double *W3_v, double *b1, double *b1_m, double *b1_v, double *b2, double *b2_m, double *b2_v, double *b3, double *b3_m, , double *b3_v, int **step_layer1, int *steps)
+load_fss(int fss_hash, int *ncols, int *n_batches, int **hashes, double **matrix, double *targets,  double **W1, double **W1_m, double **W1_v, double **W2, double **W2_m, double **W2_v, double *W3, double *W3_m, double *W3_v, double *b1, double *b1_m, double *b1_v, double *b2, double *b2_m, double *b2_v, double *b3, double *b3_m, double *b3_v, int **step_layer1, int *steps)
 {
 	RangeVar   *aqo_data_table_rv;
 	Relation	aqo_data_heap;
@@ -426,7 +426,7 @@ load_fss(int fss_hash, int *ncols, int *n_batches, int **hashes, double **matrix
 		heap_deform_tuple(tuple, aqo_data_heap->rd_att, values, isnull);
 
 		*ncols =  DatumGetInt32(values[2]);
-		*n_bathces =  DatumGetInt32(values[3]);
+		*n_batches =  DatumGetInt32(values[3]);
 
 		if (*ncols > 0){
 			for (int i = 0; i < WIDTH_1; ++i){
@@ -434,7 +434,7 @@ load_fss(int fss_hash, int *ncols, int *n_batches, int **hashes, double **matrix
 				W1_m[i] = palloc0(sizeof(**W1_m) * (*ncols));
 				W1_v[i] = palloc0(sizeof(**W1_v) * (*ncols));
 			}
-			for (int i = 0; i < n_batches; ++i)
+			for (int i = 0; i < (*n_batches); ++i)
 				matrix[i]=palloc0(sizeof(**matrix) * (*ncols));
 			*hashes = palloc0(sizeof(**hashes) * (*ncols));
 			*step_layer1 = palloc0(sizeof(**step_layer1) * (*ncols));
@@ -452,7 +452,7 @@ load_fss(int fss_hash, int *ncols, int *n_batches, int **hashes, double **matrix
 			deform_int_vector(values[24], (*hashes), ncols);
 			deform_int_vector(values[25], (*step_layer1), ncols);
 		}
-		deform_vector(values[5], targets, n_batches)
+		deform_vector(values[5], targets, n_batches);
 				
 		deform_matrix(values[9], W2);
 		deform_matrix(values[10], W2_m);
@@ -495,7 +495,7 @@ load_fss(int fss_hash, int *ncols, int *n_batches, int **hashes, double **matrix
  * 'targets' is vector of size 'nrows'
  */
 bool
-update_fss(int fss_hash, int ncols, int n_batches, int *hashes, double **matrix, double *targets,  double **W1, double **W1_m, double **W1_v, double **W2, double **W2_m, double **W2_v, double *W3, double *W3_m, double *W3_v, double *b1, double *b1_m, double *b1_v, double *b2, double *b2_m, double *b2_v, double *b3, double *b3_m, , double *b3_v, int *step_layer1, int steps)
+update_fss(int fss_hash, int ncols, int n_batches, int *hashes, double **matrix, double *targets,  double **W1, double **W1_m, double **W1_v, double **W2, double **W2_m, double **W2_v, double *W3, double *W3_m, double *W3_v, double *b1, double *b1_m, double *b1_v, double *b2, double *b2_m, double *b2_v, double b3, double b3_m, double b3_v, int *step_layer1, int steps)
 {
 	RangeVar   *aqo_data_table_rv;
 	Relation	aqo_data_heap;
