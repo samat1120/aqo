@@ -161,9 +161,9 @@ atomic_fss_learn_step(int fss_hash,
 	double b3_v;
 	int n_rows;
 	for (i = 0; i < WIDTH_2; ++i){
-	     W2[i] = palloc0(sizeof(double) * WIDTH_1);
-	     W2_m[i] = palloc0(sizeof(double) * WIDTH_1);
-	     W2_v[i] = palloc0(sizeof(double) * WIDTH_1);}
+	     W2[i] = palloc0(sizeof(**W2) * WIDTH_1);
+	     W2_m[i] = palloc0(sizeof(**W2_m) * WIDTH_1);
+	     W2_v[i] = palloc0(sizeof(**W2_v) * WIDTH_1);}
 	double stdv;
 	if (!load_fss(fss_hash, &ncols, &n_batches, &hashes, matrix, targets, W1, W1_m, W1_v, W2, W2_m, W2_v, W3, W3_m, W3_v, b1, b1_m, b1_v, b2, b2_m, b2_v, &b3, &b3_m, &b3_v, &step_layer1, &steps)){
 		for (i = 0; i < WIDTH_1; ++i){
