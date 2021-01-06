@@ -103,7 +103,7 @@ predict_for_relation(List *restrict_clauses, List *selectivities,
 			pfree(W1_m[i]);
 			pfree(W1_v[i]);
 		    }
-		    for (int i = 0; i < n_batch; ++i)
+		    for (int i = 0; i < n_batches; ++i)
 		        pfree(matrix[i]);
 		    pfree(step_layer1);
 		}
