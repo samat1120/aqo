@@ -161,11 +161,11 @@ atomic_fss_learn_step(int fss_hash,
 	double b3_m;
 	double b3_v;
 	int n_rows;
+	double stdv;
 	for (i = 0; i < WIDTH_2; ++i){
 	     W2[i] = palloc0(sizeof(**W2) * WIDTH_1);
 	     W2_m[i] = palloc0(sizeof(**W2_m) * WIDTH_1);
 	     W2_v[i] = palloc0(sizeof(**W2_v) * WIDTH_1);}
-	double stdv;
 	if (!load_fss(fss_hash, &ncols, &n_batches, &hashes, matrix, targets, W1, W1_m, W1_v, W2, W2_m, W2_v, W3, W3_m, W3_v, b1, b1_m, b1_v, b2, b2_m, b2_v, &b3, &b3_m, &b3_v, &step_layer1, &steps)){
 		for (i = 0; i < WIDTH_1; ++i){
 		    W1[i] = palloc0(sizeof(**W1) * (nfeatures+nrels));
@@ -193,8 +193,8 @@ atomic_fss_learn_step(int fss_hash,
                       b2_v, W3_m, W3_v, &b3_m, &b3_v,
                       step_layer1, &steps, samples, labels);
 		update_fss(fss_hash, (nfeatures+nrels), 1, hashes, samples, labels, 
-			   W1, W1_m, W1_v, b1, b1_m, b1_v, W2, W2_m, W2_v, b2, b2_m,
-                           b2_v, W3, W3_m, W3_v, b3, b3_m, b3_v, step_layer1, steps);
+			   W1, W1_m, W1_v, W2, W2_m, W2_v, W3, W3_m, W3_v, b1, b1_m, b1_v, b2, b2_m,
+                           b2_v, b3, b3_m, b3_v, step_layer1, steps);
 		if ((nfeatures+nrels) > 0){
 			for (i = 0; i < WIDTH_1; ++i){
 				pfree(W1[i]);
@@ -269,8 +269,8 @@ atomic_fss_learn_step(int fss_hash,
 			      b2_v, W3_m, W3_v, &b3_m, &b3_v,
 			      step_layer1_2, &steps, samples, labels);
 			update_fss(fss_hash, (ncols+to_add), n_batches, new_hashes, samples, labels, 
-				   new_W1, new_W1_m, new_W1_v, b1, b1_m, b1_v, W2, W2_m, W2_v, b2, b2_m,
-				   b2_v, W3, W3_m, W3_v, b3, b3_m, b3_v, step_layer1, steps);
+				   new_W1, new_W1_m, new_W1_v, W2, W2_m, W2_v, W3, W3_m, W3_v, b1, b1_m, b1_v, b2, b2_m,
+				   b2_v, b3, b3_m, b3_v, step_layer1, steps);
 			for (i = 0; i < WIDTH_1; ++i){
 			     pfree(new_W1[i]);
 			     pfree(new_W1_m[i]);
@@ -289,8 +289,8 @@ atomic_fss_learn_step(int fss_hash,
 			      b2_v, W3_m, W3_v, &b3_m, &b3_v,
 			      step_layer1, &steps, samples, labels);
 			update_fss(fss_hash, ncols, n_batches, hashes, samples, labels, 
-				   W1, W1_m, W1_v, b1, b1_m, b1_v, W2, W2_m, W2_v, b2, b2_m,
-				   b2_v, W3, W3_m, W3_v, b3, b3_m, b3_v, step_layer1, steps);
+				   W1, W1_m, W1_v, W2, W2_m, W2_v, W3, W3_m, W3_v, b1, b1_m, b1_v, b2, b2_m,
+				   b2_v, b3, b3_m, b3_v, step_layer1, steps);
 		}
 		if (ncols > 0){
 		    for (i = 0; i < WIDTH_1; ++i){
