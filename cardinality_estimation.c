@@ -51,10 +51,6 @@ predict_for_relation(List *restrict_clauses, List *selectivities,
 	double	b3_m;
 	double	b3_v;
 	int i, j, tmp;
-	for (i = 0; i < WIDTH_2; ++i){
-	     W2[i] = palloc(sizeof(**W2) * WIDTH_1);
-	     W2_m[i] = palloc(sizeof(**W2_m) * WIDTH_1);
-	     W2_v[i] = palloc(sizeof(**W2_v) * WIDTH_1);}
 	double	*features;
 	int	*rels;
 	int	*sorted_clauses;
@@ -62,7 +58,12 @@ predict_for_relation(List *restrict_clauses, List *selectivities,
 	int *step_layer1;
 	int steps;
 	double	result;
-	int to_add=0;
+	int to_add;
+	to_add=0;
+	for (i = 0; i < WIDTH_2; ++i){
+	     W2[i] = palloc(sizeof(**W2) * WIDTH_1);
+	     W2_m[i] = palloc(sizeof(**W2_m) * WIDTH_1);
+	     W2_v[i] = palloc(sizeof(**W2_v) * WIDTH_1);}
 
 	*fss_hash = get_fss_for_object(restrict_clauses, selectivities, relids, &nfeatures, &nrels, &features, &rels, &sorted_clauses);
 	
