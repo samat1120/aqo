@@ -53,7 +53,7 @@ CREATE TABLE public.aqo_data (
 	b3_v                    double precision,
 	hashes 			integer[],
 	step_layer1             integer[],
-	steps                   int NOT NULL
+	steps                   int NOT NULL,
 	UNIQUE (fspace_hash, fsspace_hash)
 );
 
