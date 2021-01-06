@@ -50,19 +50,18 @@ predict_for_relation(List *restrict_clauses, List *selectivities,
 	double	b3;
 	double	b3_m;
 	double	b3_v;
+	int i, j, tmp;
 	for (i = 0; i < WIDTH_2; ++i){
 	     W2[i] = palloc(sizeof(**W2) * WIDTH_1);
 	     W2_m[i] = palloc(sizeof(**W2_m) * WIDTH_1);
 	     W2_v[i] = palloc(sizeof(**W2_v) * WIDTH_1);}
 	double	*features;
-	double stdv;
 	int	*rels;
 	int	*sorted_clauses;
 	int	*hashes, *hshes;
 	int *step_layer1;
 	int steps;
 	double	result;
-	int		i,j,tmp;
 	int to_add=0;
 
 	*fss_hash = get_fss_for_object(restrict_clauses, selectivities, relids, &nfeatures, &nrels, &features, &rels, &sorted_clauses);
@@ -78,7 +77,7 @@ predict_for_relation(List *restrict_clauses, List *selectivities,
 		fs[nfeatures+i] = 1;
 	}
 
-	if (load_fss(*fss_hash, &ncols, &n_batches, &hashes, matrix, targets, W1, W1_m, W1_v, W2, W2_m, W2_v, W3, W3_m, W3_v, b1, b1_m, b1_v, b2, b2_m, b2_v, &b3, &b3_m, &b3_v, &step_layer1, &steps){
+	if (load_fss(*fss_hash, &ncols, &n_batches, &hashes, matrix, targets, W1, W1_m, W1_v, W2, W2_m, W2_v, W3, W3_m, W3_v, b1, b1_m, b1_v, b2, b2_m, b2_v, &b3, &b3_m, &b3_v, &step_layer1, &steps)){
 		feats = palloc0(sizeof(*feats) * (ncols+nfeatures+nrels));
 		for (i=0;i<(nfeatures+nrels);i++){
 			tmp = i;
