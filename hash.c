@@ -90,8 +90,7 @@ get_fss_for_object(List *clauselist, List *selectivities, List *relidslist,
 	ListCell   *l;
 	int			i,
 				j,
-				k,
-				m;
+				k;
 	int			sh = 0,
 				old_sh;
 	double summ;
