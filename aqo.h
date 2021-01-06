@@ -234,9 +234,12 @@ extern double auto_tuning_convergence_error;
 
 #define WIDTH_1 (150) // size of the output of the first layer
 #define WIDTH_2 (150) // size of the output of the second layer
-#define lr (0.01) // learning rate
+#define lr (0.001) // learning rate
 #define slope (0.01) // parameter of non-activation layer
 #define N_ITERS (100) // number of iterations
+#define beta_1 (0.9)
+#define beta_2 (0.999)
+#define eps (1e-08)
 
 /* Max number of matrix rows - max number of possible neighbors. */
 #define	n_all_samples	(100)
@@ -355,10 +358,10 @@ void		aqo_ExecutorEnd(QueryDesc *queryDesc);
 extern double
 neural_predict (int ncols, double **W1, double *b1, double **W2, double *b2, double *W3, double b3, double *features);
 extern void
-neural_learn (int n_batch, int n_cols, double **W1, double *b1, double **W2, double *b2, double *W3, double *b3,
-                      double **W1_m, double **W1_v, double *b1_m, double *b1_v, double **W2_m, double **W2_v, double *b2_m,
-                      double *b2_v, double *W3_m, double *W3_v, double *b3_m, double *b3_v,
-                      int state_t, double **features, double *targets, double to_add);
+neural_learn (int n_batch, int n_cols,  double **W1,  double *b1,  double **W2,  double *b2,  double *W3,  double *b3,
+                       double **W1_m,  double **W1_v,  double *b1_m,  double *b1_v,  double **W2_m,  double **W2_v,  double *b2_m,
+                       double *b2_v,  double *W3_m,  double *W3_v,  double *b3_m,  double *b3_v,
+                       int *step_layer1, int *steps, double **features, double *targets);
 
 /* Automatic query tuning */
 void		automatical_query_tuning(int query_hash, QueryStat * stat);
