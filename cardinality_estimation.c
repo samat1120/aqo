@@ -51,9 +51,9 @@ predict_for_relation(List *restrict_clauses, List *selectivities,
 	double	b3_m;
 	double	b3_v;
 	for (i = 0; i < WIDTH_2; ++i){
-	     W2[i] = palloc(sizeof(double) * WIDTH_1);
-	     W2_m[i] = palloc(sizeof(double) * WIDTH_1);
-	     W2_v[i] = palloc(sizeof(double) * WIDTH_1);}
+	     W2[i] = palloc(sizeof(**W2) * WIDTH_1);
+	     W2_m[i] = palloc(sizeof(**W2_m) * WIDTH_1);
+	     W2_v[i] = palloc(sizeof(**W2_v) * WIDTH_1);}
 	double	*features;
 	double stdv;
 	int	*rels;
