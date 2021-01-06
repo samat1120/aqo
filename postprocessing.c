@@ -129,6 +129,7 @@ atomic_fss_learn_step(int fss_hash,
 {
 	int	*hashes;
 	int ncols;
+        int n_batches;
 	int	*hshes, *new_hashes;
 	int *step_layer1, *step_layer1_2;
 	int steps;
@@ -187,14 +188,13 @@ atomic_fss_learn_step(int fss_hash,
 		
 		samples[0] = palloc0(sizeof(**samples) * (nfeatures+nrels));
 		batching(0, 0, (nfeatures+nrels), matrix, samples, targets, labels, features, target);
-		neural_learn(1, (nfeatures+nrels), W1, b1, W2, b2, W3, b3,
+		neural_learn(1, (nfeatures+nrels), W1, b1, W2, b2, W3, &b3,
                       W1_m, W1_v, b1_m, b1_v, W2_m, W2_v, b2_m,
-                      b2_v, W3_m, W3_v, b3_m, b3_v,
+                      b2_v, W3_m, W3_v, &b3_m, &b3_v,
                       step_layer1, &steps, samples, labels);
-		update_fss(fss_hash, 1, (nfeatures+nrels), hashes, samples, labels, 
-			   W1, b1, W2, b2, W3, b3,
-			   W1_m, W1_v, b1_m, b1_v, W2_m, W2_v, b2_m,
-                           b2_v, W3_m, W3_v, b3_m, b3_v, step_layer1, steps);
+		update_fss(fss_hash, (nfeatures+nrels), 1, hashes, samples, labels, 
+			   W1, W1_m, W1_v, b1, b1_m, b1_v, W2, W2_m, W2_v, b2, b2_m,
+                           b2_v, W3, W3_m, W3_v, b3, b3_m, b3_v, step_layer1, steps);
 		if ((nfeatures+nrels) > 0){
 			for (i = 0; i < WIDTH_1; ++i){
 				pfree(W1[i]);
@@ -245,7 +245,7 @@ atomic_fss_learn_step(int fss_hash,
 			for (i = 0; i < WIDTH_1; ++i){
 				new_W1[i] = palloc0(sizeof(**new_W1) * (ncols+to_add));
 				new_W1_m[i] = palloc0(sizeof(**new_W1) * (ncols+to_add));
-				new_W1_v[i] = palloc0(sizeof(**new_W1) * (ncols+to_add));
+				new_W1_v[i] = palloc0(sizeof(**new_W1) * (ncols+to_add));}
 
 			for (j = 0; j < (ncols+to_add); ++j){
 				for (i = 0; i < WIDTH_1; ++i){
@@ -264,14 +264,13 @@ atomic_fss_learn_step(int fss_hash,
 			step_layer1_2 = palloc0(sizeof(*step_layer1_2) * (ncols+to_add));
 			for (i=0;i<ncols;++i)
 			      step_layer1_2[i] = step_layer1[i];
-			neural_learn(n_batches, (ncols+to_add), new_W1, b1, W2, b2, W3, b3,
+			neural_learn(n_batches, (ncols+to_add), new_W1, b1, W2, b2, W3, &b3,
 			      new_W1_m, new_W1_v, b1_m, b1_v, W2_m, W2_v, b2_m,
-			      b2_v, W3_m, W3_v, b3_m, b3_v,
+			      b2_v, W3_m, W3_v, &b3_m, &b3_v,
 			      step_layer1_2, &steps, samples, labels);
-			update_fss(fss_hash, n_batches, (ncols+to_add), new_hashes, samples, labels, 
-				   new_W1, b1, W2, b2, W3, b3,
-				   new_W1_m, new_W1_v, b1_m, b1_v, W2_m, W2_v, b2_m,
-				   b2_v, W3_m, W3_v, b3_m, b3_v, step_layer1, steps);
+			update_fss(fss_hash, (ncols+to_add), n_batches, new_hashes, samples, labels, 
+				   new_W1, new_W1_m, new_W1_v, b1, b1_m, b1_v, W2, W2_m, W2_v, b2, b2_m,
+				   b2_v, W3, W3_m, W3_v, b3, b3_m, b3_v, step_layer1, steps);
 			for (i = 0; i < WIDTH_1; ++i){
 			     pfree(new_W1[i]);
 			     pfree(new_W1_m[i]);
@@ -285,14 +284,13 @@ atomic_fss_learn_step(int fss_hash,
 			batching(n_batches, ncols, 0, matrix, samples, targets, labels, features, target);
 			if (n_batches<n_all_samples)
 			    ++n_batches;
-			neural_learn(n_batches, ncols, W1, b1, W2, b2, W3, b3,
+			neural_learn(n_batches, ncols, W1, b1, W2, b2, W3, &b3,
 			      W1_m, W1_v, b1_m, b1_v, W2_m, W2_v, b2_m,
-			      b2_v, W3_m, W3_v, b3_m, b3_v,
+			      b2_v, W3_m, W3_v, &b3_m, &b3_v,
 			      step_layer1, &steps, samples, labels);
-			update_fss(fss_hash, n_batches, ncols, hashes, samples, labels, 
-				   W1, b1, W2, b2, W3, b3,
-				   W1_m, W1_v, b1_m, b1_v, W2_m, W2_v, b2_m,
-				   b2_v, W3_m, W3_v, b3_m, b3_v, step_layer1, steps);
+			update_fss(fss_hash, ncols, n_batches, hashes, samples, labels, 
+				   W1, W1_m, W1_v, b1, b1_m, b1_v, W2, W2_m, W2_v, b2, b2_m,
+				   b2_v, W3, W3_m, W3_v, b3, b3_m, b3_v, step_layer1, steps);
 		}
 		if (ncols > 0){
 		    for (i = 0; i < WIDTH_1; ++i){
@@ -303,8 +301,7 @@ atomic_fss_learn_step(int fss_hash,
 		    for (int i = 0; i < n_batches; ++i)
 		        pfree(matrix[i]);
 		}
-		}
-		if ((nfeatures+nrels){
+		if ((nfeatures+nrels)>0){
 			pfree(hshes);
 			pfree(fs);}
 		if (ncols>0){
