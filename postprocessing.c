@@ -300,7 +300,7 @@ atomic_fss_learn_step(int fss_hash,
 			pfree(W1_m[i]);
 			pfree(W1_v[i]);
 		    }
-		    for (int i = 0; i < n_batch; ++i)
+		    for (int i = 0; i < n_batches; ++i)
 		        pfree(matrix[i]);
 		}
 		}
