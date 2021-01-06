@@ -106,6 +106,7 @@ predict_for_relation(List *restrict_clauses, List *selectivities,
 		    }
 		    for (int i = 0; i < n_batch; ++i)
 		        pfree(matrix[i]);
+		    pfree(step_layer1);
 		}
 		if ((ncols+nfeatures+nrels)>0)
 		    pfree(feats);
