@@ -434,7 +434,7 @@ load_fss(int fss_hash, int *ncols, int *n_batches, int **hashes, double **matrix
 				W1_m[i] = palloc0(sizeof(**W1_m) * (*ncols));
 				W1_v[i] = palloc0(sizeof(**W1_v) * (*ncols));
 			}
-			for (int i = 0; i < n_batch; ++i)
+			for (int i = 0; i < n_batches; ++i)
 				matrix[i]=palloc0(sizeof(**matrix) * (*ncols));
 			*hashes = palloc0(sizeof(**hashes) * (*ncols));
 			*step_layer1 = palloc0(sizeof(**step_layer1) * (*ncols));
@@ -452,7 +452,7 @@ load_fss(int fss_hash, int *ncols, int *n_batches, int **hashes, double **matrix
 			deform_int_vector(values[24], (*hashes), ncols);
 			deform_int_vector(values[25], (*step_layer1), ncols);
 		}
-		deform_vector(values[5], targets, n_batch)
+		deform_vector(values[5], targets, n_batches)
 				
 		deform_matrix(values[9], W2);
 		deform_matrix(values[10], W2_m);
@@ -579,7 +579,7 @@ update_fss(int fss_hash, int ncols, int n_batches, int *hashes, double **matrix,
 			isnull[24] = true;
 			isnull[25] = true;
 		}
-		values[5] = PointerGetDatum(form_vector(targets, n_batch));
+		values[5] = PointerGetDatum(form_vector(targets, n_batches));
 
 		values[9] = PointerGetDatum(form_matrix(W2, WIDTH_2, WIDTH_1));
 		values[10] = PointerGetDatum(form_matrix(W2_m, WIDTH_2, WIDTH_1));
