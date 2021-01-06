@@ -108,8 +108,8 @@ neural_learn (int const n_batch, int n_cols,  double **W1,  double *b1,  double 
 {
     int i,j,k, iter;
      double elem, output;
-     double *output1[n_batch], *output2[n_batch], *output3[n_batch], *output4[n_batch], output5[n_batch],
-           *gradInput2[n_batch], *gradInput3[n_batch], *gradInput4[n_batch], *gradInput5[n_batch], gradInput[n_batch],
+     double *output1[n_all_samples], *output2[n_all_samples], *output3[n_all_samples], *output4[n_all_samples], output5[n_all_samples],
+           *gradInput2[n_all_samples], *gradInput3[n_all_samples], *gradInput4[n_all_samples], *gradInput5[n_all_samples], gradInput[n_all_samples],
            *gradW1[WIDTH_1], gradb1[WIDTH_1], *gradW2[WIDTH_2], gradb2[WIDTH_2], gradW3[WIDTH_2], gradb3;
     for (i=0;i<n_batch;i++){
         output1[i] = palloc0(sizeof(**output1) * WIDTH_1);
