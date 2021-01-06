@@ -249,3 +249,48 @@ neural_learn (int n_batch, int n_cols,  double **W1,  double *b1,  double **W2, 
             for (i=0;i<WIDTH_2;i++)
                 pfree(gradW2[i]);
 }
+
+double
+neural_predict (int nfeatures, double **W1, double *b1, double **W2, double *b2, double *W3, double b3, double *feature) //prediction
+{
+    double *out1;
+    double *out2;
+    double *out3;
+    double *out4;
+    double out5;
+    out1 = palloc0(WIDTH_1 * sizeof(*out1));
+    for (int i = 0; i < WIDTH_1; ++i){
+        for (int j = 0; j < nfeatures; ++j)
+            out1[i] = out1[i]+feature[j]*W1[i][j];
+        out1[i]=out1[i]+b1[i];
+    }
+    out2 = palloc0(WIDTH_1 * sizeof(*out2)); // vector for the output of Leaky ReLU activation function in the first layer
+    for (int i = 0; i < WIDTH_1; ++i){
+        if (out1[i]<out1[i]*slope)
+            out2[i]=out1[i]*slope;
+        else
+            out2[i]=out1[i];
+    }
+    out3 = palloc0(WIDTH_2 * sizeof(*out3));
+    for (int i = 0; i < WIDTH_2; ++i){
+        for (int j = 0; j < WIDTH_1; ++j)
+            out3[i]=out3[i]+out2[j]*W2[i][j];
+        out3[i]=out3[i]+b2[i];
+    }
+    out4 = palloc0(WIDTH_2 * sizeof(*out4)); // vector for the output of Leaky ReLU activation function in the second layer
+    for (int i = 0; i < WIDTH_2; ++i){
+        if (out3[i]<out3[i]*slope)
+            out4[i]=out3[i]*slope;
+        else
+            out4[i]=out3[i];
+    }
+    out5=0; //final result (one number)
+    for (int j = 0; j < WIDTH_2; ++j)
+        out5=out5+out4[j]*W3[j];
+    out5=out5+b3;
+    pfree(out1);
+    pfree(out2);
+    pfree(out3);
+    pfree(out4);
+    return out5;
+}
