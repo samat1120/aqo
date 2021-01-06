@@ -196,8 +196,10 @@ atomic_fss_learn_step(int fss_hash,
 			   W1_m, W1_v, b1_m, b1_v, W2_m, W2_v, b2_m,
                            b2_v, W3_m, W3_v, b3_m, b3_v, step_layer1, steps);
 		if ((nfeatures+nrels) > 0){
-			for (i = 0; i < WIDTH_1; ++i)
+			for (i = 0; i < WIDTH_1; ++i){
 				pfree(W1[i]);
+				pfree(W1_m[i]);
+				pfree(W1_v[i]);}
 			pfree(samples[0]);
 			pfree(feats);
 			pfree(hashes);
