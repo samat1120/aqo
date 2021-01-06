@@ -152,7 +152,7 @@ get_fss_for_object(List *clauselist, List *selectivities, List *relidslist,
 	i = 0;
 
 	*nrels = list_length(relidslist);
-	*rels = palloc0(sizeof(**rels) * (*nrels));
+	(*rels) = palloc0(sizeof(**rels) * (*nrels));
 	foreach(l, relidslist)
 		(*rels)[i++] = lfirst_int(l);
 
