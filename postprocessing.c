@@ -160,7 +160,6 @@ atomic_fss_learn_step(int fss_hash,
 	double b3;
 	double b3_m;
 	double b3_v;
-	int n_rows;
 	double stdv;
 	for (i = 0; i < WIDTH_2; ++i){
 	     W2[i] = palloc0(sizeof(**W2) * WIDTH_1);
