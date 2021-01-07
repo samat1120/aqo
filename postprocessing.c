@@ -166,15 +166,18 @@ atomic_fss_learn_step(int fss_hash,
 	     W2_m[i] = palloc0(sizeof(**W2_m) * WIDTH_1);
 	     W2_v[i] = palloc0(sizeof(**W2_v) * WIDTH_1);}
 	if (!load_fss(fss_hash, &ncols, &n_batches, &hashes, matrix, targets, W1, W1_m, W1_v, W2, W2_m, W2_v, W3, W3_m, W3_v, b1, b1_m, b1_v, b2, b2_m, b2_v, &b3, &b3_m, &b3_v, &step_layer1, &steps)){
+		if ((nfeatures+nrels)>0){
 		for (i = 0; i < WIDTH_1; ++i){
 		    W1[i] = palloc0(sizeof(**W1) * (nfeatures+nrels));
 		    W1_m[i] = palloc0(sizeof(**W1_m) * (nfeatures+nrels));
 		    W1_v[i] = palloc0(sizeof(**W1_v) * (nfeatures+nrels));
 		}
-		nn_init((nfeatures+nrels), W1, W2, W3, b1, b2, &b3);
 		hashes = palloc0(sizeof(*hashes) * (nfeatures+nrels));
 		feats = palloc0(sizeof(*feats) * (nfeatures+nrels));
 		step_layer1 = palloc0(sizeof(*step_layer1) * (nfeatures+nrels));
+		samples[0] = palloc0(sizeof(**samples) * (nfeatures+nrels));
+		}
+		nn_init((nfeatures+nrels), W1, W2, W3, b1, b2, &b3);
 		steps=0;
 		for (i=0;i<nfeatures;i++){
 			hashes[i] = sorted_clauses[i];
@@ -184,8 +187,6 @@ atomic_fss_learn_step(int fss_hash,
 			hashes[nfeatures+i] = rels[i];
 			feats[nfeatures+i] = 1;
 		}
-		
-		samples[0] = palloc0(sizeof(**samples) * (nfeatures+nrels));
 		batching(0, 0, (nfeatures+nrels), matrix, samples, targets, labels, features, target);
 		neural_learn(1, (nfeatures+nrels), W1, b1, W2, b2, W3, &b3,
                       W1_m, W1_v, b1_m, b1_v, W2_m, W2_v, b2_m,
@@ -206,8 +207,10 @@ atomic_fss_learn_step(int fss_hash,
 		}
 	}
 	else{
+		if ((nfeatures+nrels)>0){
 		hshes = palloc0(sizeof(*hshes) * (nfeatures+nrels));
 		fs = palloc0(sizeof(*fs) * (nfeatures+nrels));
+		}
 		for (i=0;i<nfeatures;i++){
 			hshes[i] = sorted_clauses[i];
 			fs[i] = features[i];
@@ -216,8 +219,10 @@ atomic_fss_learn_step(int fss_hash,
 			hshes[i+nfeatures] = rels[i];
 			fs[nfeatures+i] = 1;
 		}
+		if ((ncols+nfeatures+nrels)>0){
 		feats = palloc0(sizeof(*feats) * (ncols+nfeatures+nrels));
 		new_hashes = palloc0(sizeof(*new_hashes) * (ncols+nfeatures+nrels));
+		}
 		for (i=0;i<ncols;i++)
 			new_hashes[i] = hashes[i];
 		to_add=0;
@@ -236,8 +241,10 @@ atomic_fss_learn_step(int fss_hash,
 				++to_add;
 			}
 		}
+		if ((ncols+nfeatures+nrels)>0){
 		new_hashes = repalloc(new_hashes, (ncols+to_add) * sizeof(*new_hashes));
 		feats = repalloc(feats, (ncols+to_add) * sizeof(*feats));
+		}
 		if (to_add>0){
 			srand(1);
 			stdv = 1 / sqrt(ncols+to_add);
@@ -282,8 +289,9 @@ atomic_fss_learn_step(int fss_hash,
 			pfree(step_layer1_2);
 		}
 		else{
-			for (i=0;i<=n_batches;i++)
-			    samples[i] = palloc0(sizeof(double) * ncols);
+			if (ncols>0)
+			    for (i=0;i<=n_batches;i++)
+			        samples[i] = palloc0(sizeof(**samples) * ncols);
 			batching(n_batches, ncols, 0, matrix, samples, targets, labels, features, target);
 			if (n_batches<n_all_samples)
 			    ++n_batches;
