@@ -178,6 +178,8 @@ atomic_fss_learn_step(int fss_hash,
 		samples[0] = palloc0(sizeof(**samples) * (nfeatures+nrels));
 		}
 		nn_init((nfeatures+nrels), W1, W2, W3, b1, b2, &b3);
+		for (i = 0; i < (nfeatures+nrels); ++i)
+		    step_layer1[i]=0;
 		steps=0;
 		for (i=0;i<nfeatures;i++){
 			hashes[i] = sorted_clauses[i];
@@ -271,6 +273,8 @@ atomic_fss_learn_step(int fss_hash,
 			if (n_batches<n_all_samples)
 			    ++n_batches;
 			step_layer1_2 = palloc0(sizeof(*step_layer1_2) * (ncols+to_add));
+			for (i=0;i<(ncols+to_add);++i)
+				step_layer1_2[i] = 0;
 			for (i=0;i<ncols;++i)
 			      step_layer1_2[i] = step_layer1[i];
 			neural_learn(n_batches, (ncols+to_add), new_W1, b1, W2, b2, W3, &b3,
