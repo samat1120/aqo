@@ -102,8 +102,8 @@ batching(int n_batches, int n_cols, int to_add, double **matrix, double **sample
             labels[i] = targets[i];
         }
         for (j=0;j<(n_cols+to_add);++j)
-            samples[n_batches-1][j] = features[j];
-        labels[n_batches-1] = target;
+            samples[n_batches][j] = features[j];
+        labels[n_batches] = target;
     }
     else{
         for (i=1;i<n_batches;i++){
