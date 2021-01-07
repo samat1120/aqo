@@ -259,10 +259,11 @@ atomic_fss_learn_step(int fss_hash,
 				}
 			}
 			for (i = 0; i < WIDTH_1; ++i){
-				for (j = 0; j < ncols; ++j)
+				for (j = 0; j < ncols; ++j){
 					new_W1[i][j] = W1[i][j];
 					new_W1_m[i][j] = W1_m[i][j];
 					new_W1_v[i][j] = W1_v[i][j];
+				}
 			}
 			for (i=0;i<=n_batches;i++)
 			    samples[i] = palloc0(sizeof(**samples) * (ncols+to_add));
