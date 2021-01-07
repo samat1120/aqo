@@ -136,7 +136,7 @@ neural_learn (int n_batch, int n_cols,  double **W1,  double *b1,  double **W2, 
             for (j=0;j<WIDTH_1;j++){
                 elem=0;
                 for (k=0;k<n_cols;k++)
-                    elem=elem+features[i][k]*W1[j][k];
+                    elem=elem+(features[i][k]/C_mul)*W1[j][k];
                 elem=elem+b1[j];
                 output1[i][j]=elem;
             }
@@ -169,10 +169,10 @@ neural_learn (int n_batch, int n_cols,  double **W1,  double *b1,  double **W2, 
         }
         output=0;
         for (i=0;i<n_batch;i++)
-            output=output+pow(output5[i]-targets[i],2);
+            output=output+pow(output5[i]-targets[i]/C_mul,2);
         output=output/n_batch;
         for (i=0;i<n_batch;i++)
-            gradInput[i]=2*(output5[i]-targets[i])/n_batch;
+            gradInput[i]=2*(output5[i]-targets[i]/C_mul)/n_batch;
         for (i=0;i<n_batch;i++)
             for (j=0;j<WIDTH_2;j++)
                 gradInput5[i][j] = gradInput[i]*W3[j];
@@ -262,7 +262,7 @@ neural_predict (int nfeatures, double **W1, double *b1, double **W2, double *b2,
     out1 = palloc0(WIDTH_1 * sizeof(*out1));
     for (int i = 0; i < WIDTH_1; ++i){
         for (int j = 0; j < nfeatures; ++j)
-            out1[i] = out1[i]+feature[j]*W1[i][j];
+            out1[i] = out1[i]+(feature[j]/C_mul)*W1[i][j];
         out1[i]=out1[i]+b1[i];
     }
     out2 = palloc0(WIDTH_1 * sizeof(*out2)); // vector for the output of Leaky ReLU activation function in the first layer
@@ -293,5 +293,5 @@ neural_predict (int nfeatures, double **W1, double *b1, double **W2, double *b2,
     pfree(out2);
     pfree(out3);
     pfree(out4);
-    return out5;
+    return out5*C_mul;
 }
