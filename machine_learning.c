@@ -121,8 +121,9 @@ neural_learn (int n_batch, int n_cols,  double **W1,  double *b1,  double **W2, 
         gradInput4[i] = palloc0(sizeof(**gradInput4) * WIDTH_2);
         gradInput5[i] = palloc0(sizeof(**gradInput5) * WIDTH_2);
     }
-    for (i=0;i<WIDTH_1;i++)
-        gradW1[i] = palloc0(sizeof(**gradW1) * n_cols);
+    if (ncols>0)
+       for (i=0;i<WIDTH_1;i++)
+           gradW1[i] = palloc0(sizeof(**gradW1) * n_cols);
     for (i=0;i<WIDTH_2;i++)
         gradW2[i] = palloc0(sizeof(**gradW2) * WIDTH_1);
 
