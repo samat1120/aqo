@@ -232,7 +232,7 @@ extern double auto_tuning_convergence_error;
 
 /* Machine learning parameters */
 
-#define WIDTH_1 (100) // size of the output of the first layer
+#define WIDTH_1 (15) // size of the output of the first layer
 #define WIDTH_2 (100) // size of the output of the second layer
 #define lr (0.001) // learning rate
 #define slope (0.01) // parameter of non-activation layer
