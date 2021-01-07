@@ -67,8 +67,10 @@ predict_for_relation(List *restrict_clauses, List *selectivities,
 
 	*fss_hash = get_fss_for_object(restrict_clauses, selectivities, relids, &nfeatures, &nrels, &features, &rels, &sorted_clauses);
 	
+	if ((nfeatures+nrels)>0){
 	hshes = palloc0(sizeof(*hshes) * (nfeatures+nrels));
 	fs = palloc0(sizeof(*fs) * (nfeatures+nrels));
+	}
 	for (i=0;i<nfeatures;i++){
 		hshes[i] = sorted_clauses[i];
 		fs[i] = features[i];
@@ -79,7 +81,8 @@ predict_for_relation(List *restrict_clauses, List *selectivities,
 	}
 
 	if (load_fss(*fss_hash, &ncols, &n_batches, &hashes, matrix, targets, W1, W1_m, W1_v, W2, W2_m, W2_v, W3, W3_m, W3_v, b1, b1_m, b1_v, b2, b2_m, b2_v, &b3, &b3_m, &b3_v, &step_layer1, &steps)){
-		feats = palloc0(sizeof(*feats) * (ncols+nfeatures+nrels));
+		if ((ncols+nfeatures+nrels)>0)
+		   feats = palloc0(sizeof(*feats) * (ncols+nfeatures+nrels));
 		for (i=0;i<(nfeatures+nrels);i++){
 			tmp = i;
 			for (j=0;j<ncols;j++){
