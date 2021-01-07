@@ -275,6 +275,8 @@ atomic_fss_learn_step(int fss_hash,
 			     pfree(new_W1_m[i]);
 			     pfree(new_W1_v[i]);
 			}
+			for (i=0;i<=n_batches;i++)
+                pfree(samples[i]);
 			pfree(step_layer1_2);
 		}
 		else{
@@ -290,6 +292,9 @@ atomic_fss_learn_step(int fss_hash,
 			update_fss(fss_hash, ncols, n_batches, hashes, samples, labels, 
 				   W1, W1_m, W1_v, W2, W2_m, W2_v, W3, W3_m, W3_v, b1, b1_m, b1_v, b2, b2_m,
 				   b2_v, b3, b3_m, b3_v, step_layer1, steps);
+            if (ncols>0)
+                for (i=0;i<=n_batches;i++)
+                    pfree(samples[i]);
 		}
 		if (ncols > 0){
 		    for (i = 0; i < WIDTH_1; ++i){
