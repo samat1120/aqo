@@ -188,6 +188,8 @@ atomic_fss_learn_step(int fss_hash,
 			feats[nfeatures+i] = 1;
 		}
 		batching(0, 0, (nfeatures+nrels), matrix, samples, targets, labels, feats, target);
+		b3_m=0;
+		b3_v=0;
 		neural_learn(1, (nfeatures+nrels), W1, b1, W2, b2, W3, &b3,
                       W1_m, W1_v, b1_m, b1_v, W2_m, W2_v, b2_m,
                       b2_v, W3_m, W3_v, &b3_m, &b3_v,
