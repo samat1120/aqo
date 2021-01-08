@@ -107,7 +107,7 @@ neural_learn (int n_batch, int n_cols,  double **W1,  double *b1,  double **W2, 
                        int *step_layer1, int *steps, double **features, double *targets)
 {
     int i,j,k, iter;
-     double elem, output;
+     double elem, output, l_rate;
      double *output1[n_all_samples], *output2[n_all_samples], *output3[n_all_samples], *output4[n_all_samples], output5[n_all_samples],
            *gradInput2[n_all_samples], *gradInput3[n_all_samples], *gradInput4[n_all_samples], *gradInput5[n_all_samples], gradInput[n_all_samples],
            *gradW1[WIDTH_1], gradb1[WIDTH_1], *gradW2[WIDTH_2], gradb2[WIDTH_2], gradW3[WIDTH_2], gradb3;
@@ -223,11 +223,29 @@ neural_learn (int n_batch, int n_cols,  double **W1,  double *b1,  double **W2, 
         for (i=0;i<WIDTH_1;i++)
             for (j=0;j<n_batch;j++)
                 gradb1[i]=gradb1[i]+gradInput2[j][i];
-        optim_step(n_batch, n_cols, W1, b1, W2, b2, W3, b3,
+        /*optim_step(n_batch, n_cols, W1, b1, W2, b2, W3, b3,
                    gradW1, gradb1, gradW2, gradb2, gradW3, &gradb3,
                    W1_m, W1_v, b1_m, b1_v, W2_m, W2_v, b2_m, b2_v, W3_m, W3_v, b3_m, b3_v,
                    step_layer1, steps
-                   );
+                   );*/
+        if (*steps=<1000)
+          l_rate = lr;
+        else if (*steps>1000 && *steps=<2000)
+          l_rate = lr-0.1;
+        else
+          l_rate = lr-0.2;
+        for (i=0;i<WIDTH_1;i++){
+            for (j=0;j<n_cols;j++)
+              W1[i][j] = W1[i][j] - l_rate*gradW1[i][j];
+            b1[i] = b1[i] - l_rate*gradb1[i];
+        }
+        for (i=0;i<WIDTH_2;i++){
+            for (j=0;j<WIDTH_1;j++)
+              W2[i][j] = W2[i][j] - l_rate*gradW2[i][j];
+            b2[i] = b2[i] - l_rate*gradb2[i];
+            W3[i] = W3[i] - l_rate*gradW3[i];
+            }
+        b3 = b3 - l_rate*gradb3;
         }
         if (WIDTH_1>0)
             for (i=0;i<n_batch;i++){
