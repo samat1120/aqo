@@ -169,10 +169,10 @@ neural_learn (int n_batch, int n_cols,  double **W1,  double *b1,  double **W2, 
         }
         output=0;
         for (i=0;i<n_batch;i++)
-            output=output+pow(output5[i]-targets[i]/C_mul,2);
+            output=output+pow(output5[i]-targets[i]/C_mul_2,2);
         output=output/n_batch;
         for (i=0;i<n_batch;i++)
-            gradInput[i]=2*(output5[i]-targets[i]/C_mul)/n_batch;
+            gradInput[i]=2*(output5[i]-targets[i]/C_mul_2)/n_batch;
         for (i=0;i<n_batch;i++)
             for (j=0;j<WIDTH_2;j++)
                 gradInput5[i][j] = gradInput[i]*W3[j];
@@ -293,5 +293,5 @@ neural_predict (int nfeatures, double **W1, double *b1, double **W2, double *b2,
     pfree(out2);
     pfree(out3);
     pfree(out4);
-    return out5*C_mul;
+    return out5*C_mul_2;
 }
