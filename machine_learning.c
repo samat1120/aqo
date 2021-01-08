@@ -217,7 +217,7 @@ neural_learn (int n_batch, int n_cols,  double **W1,  double *b1,  double **W2, 
             for (j=0;j<n_cols;j++){
                 elem=0;
                 for (k=0;k<n_batch;k++)
-                    elem=elem+gradInput2[k][i]*features[k][j];
+                    elem=elem+gradInput2[k][i]*(features[k][j]/C_mul);
                 gradW1[i][j]=elem;
             }
         for (i=0;i<WIDTH_1;i++)
