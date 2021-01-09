@@ -94,27 +94,43 @@ nn_init (int ncols, double **W1, double **W2, double *W3, double *b1, double *b2
 
 static void
 batching(int n_batches, int n_cols, int to_add, double **matrix, double **samples, double *targets, double *labels, double *features, double target){
-    int i,j;
-    if (n_batches<n_all_samples){
+    int i,j,sum;
+    sum=0;
+    if (to_add==0)
         for (i=0;i<n_batches;i++){
-            for (j=0;j<n_cols;++j)
-                samples[i][j] = matrix[i][j];
-            labels[i] = targets[i];
+	    sum=0;
+	    for (j=0;j<n_cols;++j)
+	        if (matrix[i][j]==features[j])
+		    ++sum;
+	    if (sum==n_cols)
+	        break;}
+    if (sum!=n_cols){
+        if (n_batches<n_all_samples){
+            for (i=0;i<n_batches;i++){
+                for (j=0;j<n_cols;++j)
+                    samples[i][j] = matrix[i][j];
+                labels[i] = targets[i];
+            }
+            for (j=0;j<(n_cols+to_add);++j)
+                samples[n_batches][j] = features[j];
+            labels[n_batches] = target;
         }
-        for (j=0;j<(n_cols+to_add);++j)
-            samples[n_batches][j] = features[j];
-        labels[n_batches] = target;
-    }
-    else{
-        for (i=1;i<n_batches;i++){
-            for (j=0;j<n_cols;++j)
-                samples[i-1][j] = matrix[i][j];
-            labels[i-1] = targets[i];
+        else{
+            for (i=1;i<n_batches;i++){
+                for (j=0;j<n_cols;++j)
+                    samples[i-1][j] = matrix[i][j];
+                labels[i-1] = targets[i];
+            }
+            for (j=0;j<(n_cols+to_add);++j)
+                samples[n_batches-1][j] = features[j];
+            labels[n_batches-1] = target;
         }
-        for (j=0;j<(n_cols+to_add);++j)
-            samples[n_batches-1][j] = features[j];
-        labels[n_batches-1] = target;
     }
+    else
+    	for (i=0;i<n_batches;i++){
+            for (j=0;j<n_cols;++j)
+	        samples[i][j] = matrix[i][j];
+            labels[i] = targets[i];}
 }
 
 /*
