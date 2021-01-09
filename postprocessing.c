@@ -93,11 +93,11 @@ nn_init (int ncols, double **W1, double **W2, double *W3, double *b1, double *b2
 }
 
 static void
-batching(int n_batches, int n_cols, int to_add, double **matrix, double **samples, double *targets, double *labels, double *features, double target){
+batching(int *n_batches, int n_cols, int to_add, double **matrix, double **samples, double *targets, double *labels, double *features, double target){
     int i,j,sum;
     sum=0;
     if (to_add==0)
-        for (i=0;i<n_batches;i++){
+        for (i=0;i<(*n_batches);i++){
 	    sum=0;
 	    for (j=0;j<n_cols;++j)
 	        if (matrix[i][j]==features[j])
@@ -105,29 +105,30 @@ batching(int n_batches, int n_cols, int to_add, double **matrix, double **sample
 	    if (sum==n_cols)
 	        break;}
     if (sum!=n_cols){
-        if (n_batches<n_all_samples){
-            for (i=0;i<n_batches;i++){
+        if ((*n_batches)<n_all_samples){
+            for (i=0;i<(*n_batches);i++){
                 for (j=0;j<n_cols;++j)
                     samples[i][j] = matrix[i][j];
                 labels[i] = targets[i];
             }
             for (j=0;j<(n_cols+to_add);++j)
-                samples[n_batches][j] = features[j];
-            labels[n_batches] = target;
+                samples[(*n_batches)][j] = features[j];
+            labels[(*n_batches)] = target;
+	    (*n_batches)=(*n_batches)+1;
         }
         else{
-            for (i=1;i<n_batches;i++){
+            for (i=1;i<(*n_batches);i++){
                 for (j=0;j<n_cols;++j)
                     samples[i-1][j] = matrix[i][j];
                 labels[i-1] = targets[i];
             }
             for (j=0;j<(n_cols+to_add);++j)
-                samples[n_batches-1][j] = features[j];
-            labels[n_batches-1] = target;
+                samples[(*n_batches)-1][j] = features[j];
+            labels[(*n_batches)-1] = target;
         }
     }
     else
-    	for (i=0;i<n_batches;i++){
+    	for (i=0;i<(*n_batches);i++){
             for (j=0;j<n_cols;++j)
 	        samples[i][j] = matrix[i][j];
             labels[i] = targets[i];}
@@ -210,14 +211,15 @@ atomic_fss_learn_step(int fss_hash,
 			hashes[nfeatures+i] = rels[i];
 			feats[nfeatures+i] = 1;
 		}
-		batching(0, 0, (nfeatures+nrels), matrix, samples, targets, labels, feats, target);
+		n_batches=0;
+		batching(&n_batches, 0, (nfeatures+nrels), matrix, samples, targets, labels, feats, target);
 		b3_m=0;
 		b3_v=0;
-		neural_learn(1, (nfeatures+nrels), W1, b1, W2, b2, W3, &b3,
+		neural_learn(n_batches, (nfeatures+nrels), W1, b1, W2, b2, W3, &b3,
                       W1_m, W1_v, b1_m, b1_v, W2_m, W2_v, b2_m,
                       b2_v, W3_m, W3_v, &b3_m, &b3_v,
                       step_layer1, &steps, samples, labels);
-		update_fss(fss_hash, (nfeatures+nrels), 1, hashes, samples, labels, 
+		update_fss(fss_hash, (nfeatures+nrels), n_batches, hashes, samples, labels, 
 			   W1, W1_m, W1_v, W2, W2_m, W2_v, W3, W3_m, W3_v, b1, b1_m, b1_v, b2, b2_m,
                            b2_v, b3, b3_m, b3_v, step_layer1, steps);
 		if ((nfeatures+nrels) > 0){
@@ -292,9 +294,7 @@ atomic_fss_learn_step(int fss_hash,
 			}
 			for (i=0;i<=n_batches;i++)
 			    samples[i] = palloc0(sizeof(**samples) * (ncols+to_add));
-			batching(n_batches, ncols, to_add, matrix, samples, targets, labels, feats, target);
-			if (n_batches<n_all_samples)
-			    ++n_batches;
+			batching(&n_batches, ncols, to_add, matrix, samples, targets, labels, feats, target);
 			step_layer1_2 = palloc0(sizeof(*step_layer1_2) * (ncols+to_add));
 			for (i=0;i<ncols;++i)
 			      step_layer1_2[i] = step_layer1[i];
@@ -318,9 +318,7 @@ atomic_fss_learn_step(int fss_hash,
 			if (ncols>0)
 			    for (i=0;i<=n_batches;i++)
 			        samples[i] = palloc0(sizeof(**samples) * ncols);
-			batching(n_batches, ncols, 0, matrix, samples, targets, labels, feats, target);
-			if (n_batches<n_all_samples)
-			    ++n_batches;
+			batching(&n_batches, ncols, 0, matrix, samples, targets, labels, feats, target);
 			neural_learn(n_batches, ncols, W1, b1, W2, b2, W3, &b3,
 			      W1_m, W1_v, b1_m, b1_v, W2_m, W2_v, b2_m,
 			      b2_v, W3_m, W3_v, &b3_m, &b3_v,
