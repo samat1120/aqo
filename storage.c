@@ -376,8 +376,8 @@ load_fss(int fss_hash, int *ncols, int *n_batches, int **hashes, double **matrix
 
 	LOCKMODE	lockmode = AccessShareLock;
 
-	Datum		values[27];
-	bool		isnull[27];
+	Datum		values[28];
+	bool		isnull[28];
 
 	bool		success = true;
 	int widthh_1, widthh_2;
