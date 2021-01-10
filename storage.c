@@ -376,8 +376,8 @@ load_fss(int fss_hash, int *ncols, int *n_batches, int **hashes, double **matrix
 
 	LOCKMODE	lockmode = AccessShareLock;
 
-	Datum		values[28];
-	bool		isnull[28];
+	Datum		values[27];
+	bool		isnull[27];
 
 	bool		success = true;
 	int widthh_1, widthh_2;
@@ -495,7 +495,7 @@ load_fss(int fss_hash, int *ncols, int *n_batches, int **hashes, double **matrix
  * 'targets' is vector of size 'nrows'
  */
 bool
-update_fss(int fss_hash, int ncols, int n_batches, int *hashes, double **matrix, double *targets,  double **W1, double **W1_m, double **W1_v, double **W2, double **W2_m, double **W2_v, double *W3, double *W3_m, double *W3_v, double *b1, double *b1_m, double *b1_v, double *b2, double *b2_m, double *b2_v, double b3, double b3_m, double b3_v, int *step_layer1, int steps, int post_time)
+update_fss(int fss_hash, int ncols, int n_batches, int *hashes, double **matrix, double *targets,  double **W1, double **W1_m, double **W1_v, double **W2, double **W2_m, double **W2_v, double *W3, double *W3_m, double *W3_v, double *b1, double *b1_m, double *b1_v, double *b2, double *b2_m, double *b2_v, double b3, double b3_m, double b3_v, int *step_layer1, int steps)
 {
 	RangeVar   *aqo_data_table_rv;
 	Relation	aqo_data_heap;
@@ -515,9 +515,9 @@ update_fss(int fss_hash, int ncols, int n_batches, int *hashes, double **matrix,
 	IndexScanDesc data_index_scan;
 	ScanKeyData	key[2];
 
-	Datum		values[28];
-	bool		isnull[28] = { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false,false, false, false, false, false, false, false};
-	bool		replace[28] = { false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true};
+	Datum		values[27];
+	bool		isnull[27] = { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false,false, false, false, false, false, false};
+	bool		replace[27] = { false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true};
 
 	data_index_rel_oid = RelnameGetRelid("aqo_fss_access_idx");
 	if (!OidIsValid(data_index_rel_oid))
@@ -597,7 +597,6 @@ update_fss(int fss_hash, int ncols, int n_batches, int *hashes, double **matrix,
 		values[22] = Float8GetDatum(b3_m);
 		values[23] = Float8GetDatum(b3_v);
 		values[26] = Int32GetDatum(steps);
-		values[27] = Int32GetDatum(post_time);
 		tuple = heap_form_tuple(tuple_desc, values, isnull);
 		PG_TRY();
 		{
@@ -655,7 +654,6 @@ update_fss(int fss_hash, int ncols, int n_batches, int *hashes, double **matrix,
 		values[22] = Float8GetDatum(b3_m);
 		values[23] = Float8GetDatum(b3_v);
 		values[26] = Int32GetDatum(steps);
-		values[27] = Int32GetDatum(post_time);
 		nw_tuple = heap_modify_tuple(tuple, tuple_desc,
 									 values, isnull, replace);
 		if (my_simple_heap_update(aqo_data_heap, &(nw_tuple->t_self), nw_tuple,
