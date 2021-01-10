@@ -655,7 +655,7 @@ update_fss(int fss_hash, int ncols, int n_batches, int *hashes, double **matrix,
 		values[22] = Float8GetDatum(b3_m);
 		values[23] = Float8GetDatum(b3_v);
 		values[26] = Int32GetDatum(steps);
-		values[27] = Float64GetDatum(post_time);
+		values[27] = Float32GetDatum(post_time);
 		nw_tuple = heap_modify_tuple(tuple, tuple_desc,
 									 values, isnull, replace);
 		if (my_simple_heap_update(aqo_data_heap, &(nw_tuple->t_self), nw_tuple,
