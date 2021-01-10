@@ -54,7 +54,7 @@ CREATE TABLE public.aqo_data (
 	hashes 			integer[],
 	step_layer1             integer[],
 	steps                   int NOT NULL,
-	post_time               double precision,
+	post_time               int NOT NULL,
 	UNIQUE (fspace_hash, fsspace_hash)
 );
 
