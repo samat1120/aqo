@@ -95,7 +95,7 @@ nn_init (int ncols, double **W1, double **W2, double *W3, double *b1, double *b2
 static void
 batching(int *n_batches, int n_cols, int to_add, double **matrix, double **samples, double *targets, double *labels, double *features, double target){
     int i,j,sum;
-    sum=0;
+    sum=-1;
     if (to_add==0)
         for (i=0;i<(*n_batches);i++){
 	    sum=0;
