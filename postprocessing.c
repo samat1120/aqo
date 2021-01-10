@@ -179,7 +179,7 @@ atomic_fss_learn_step(int fss_hash,
 	double b3_v;
 	double stdv;
 	struct timeval stop, start;
-	double time_in_mills;
+	int time_in_mills;
 	gettimeofday(&start, NULL);
 	for (i = 0; i < WIDTH_2; ++i){
 	     W2[i] = palloc0(sizeof(**W2) * WIDTH_1);
@@ -223,7 +223,7 @@ atomic_fss_learn_step(int fss_hash,
                       b2_v, W3_m, W3_v, &b3_m, &b3_v,
                       step_layer1, &steps, samples, labels);
 		gettimeofday(&stop, NULL);
-		time_in_mills = (double)(stop.tv_sec - start.tv_sec) * 1000 + (double)stop.tv_usec/1000 - (double)start.tv_usec/1000;
+		time_in_mills = (stop.tv_sec - start.tv_sec) * 1000 + stop.tv_usec/1000 - start.tv_usec/1000;
 		update_fss(fss_hash, (nfeatures+nrels), n_batches, hashes, samples, labels, 
 			   W1, W1_m, W1_v, W2, W2_m, W2_v, W3, W3_m, W3_v, b1, b1_m, b1_v, b2, b2_m,
                            b2_v, b3, b3_m, b3_v, step_layer1, steps, time_in_mills);
@@ -308,7 +308,7 @@ atomic_fss_learn_step(int fss_hash,
 			      b2_v, W3_m, W3_v, &b3_m, &b3_v,
 			      step_layer1_2, &steps, samples, labels);
 			gettimeofday(&stop, NULL);
-			time_in_mills = (double)(stop.tv_sec - start.tv_sec) * 1000 + (double)stop.tv_usec/1000 - (double)start.tv_usec/1000;
+			time_in_mills = (stop.tv_sec - start.tv_sec) * 1000 + stop.tv_usec/1000 - start.tv_usec/1000;
 			update_fss(fss_hash, (ncols+to_add), n_batches, new_hashes, samples, labels, 
 				   new_W1, new_W1_m, new_W1_v, W2, W2_m, W2_v, W3, W3_m, W3_v, b1, b1_m, b1_v, b2, b2_m,
 				   b2_v, b3, b3_m, b3_v, step_layer1_2, steps, time_in_mills);
@@ -331,7 +331,7 @@ atomic_fss_learn_step(int fss_hash,
 			      b2_v, W3_m, W3_v, &b3_m, &b3_v,
 			      step_layer1, &steps, samples, labels);
 			gettimeofday(&stop, NULL);
-			time_in_mills = (double)(stop.tv_sec - start.tv_sec) * 1000 + (double)stop.tv_usec/1000 - (double)start.tv_usec/1000;
+			time_in_mills = (stop.tv_sec - start.tv_sec) * 1000 + stop.tv_usec/1000 - start.tv_usec/1000;
 			update_fss(fss_hash, ncols, n_batches, hashes, samples, labels, 
 				   W1, W1_m, W1_v, W2, W2_m, W2_v, W3, W3_m, W3_v, b1, b1_m, b1_v, b2, b2_m,
 				   b2_v, b3, b3_m, b3_v, step_layer1, steps, time_in_mills);
