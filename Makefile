@@ -13,12 +13,16 @@ REGRESS =	aqo_disabled \
 			aqo_intelligent \
 			aqo_forced \
 			aqo_learn \
-			schema
+			schema \
+			aqo_fdw \
+			aqo_CVE-2020-14350
 
+fdw_srcdir = $(top_srcdir)/contrib/postgres_fdw
+PG_CPPFLAGS += -I$(libpq_srcdir) -I$(fdw_srcdir)
 EXTRA_REGRESS_OPTS=--temp-config=$(top_srcdir)/$(subdir)/conf.add
+EXTRA_INSTALL = contrib/postgres_fdw
 
-DATA = aqo--1.0.sql aqo--1.0--1.1.sql aqo--1.1--1.2.sql
-DATA_built = aqo--1.2.sql
+DATA = aqo--1.0.sql aqo--1.0--1.1.sql aqo--1.1--1.2.sql aqo--1.2.sql
 
 MODULE_big = aqo
 ifdef USE_PGXS
@@ -32,6 +36,3 @@ include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 endif
 
-
-$(DATA_built): $(DATA)
-	cat $+ > $@

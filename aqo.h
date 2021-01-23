@@ -105,7 +105,7 @@
  * Module storage.c is responsible for storage query settings and models
  * (i. e. all information which is used in extension).
  *
- * Copyright (c) 2016-2020, Postgres Professional
+ * Copyright (c) 2016-2021, Postgres Professional
  *
  * IDENTIFICATION
  *	  aqo/aqo.h
@@ -115,7 +115,6 @@
 #define __ML_CARD_H__
 
 #include <math.h>
-#include <sys/time.h>
 
 #include "postgres.h"
 
@@ -175,6 +174,8 @@ typedef enum
 
 extern int	aqo_mode;
 extern bool	force_collect_stat;
+extern bool aqo_show_hash;
+extern bool aqo_details;
 
 /*
  * It is mostly needed for auto tuning of query. with auto tuning mode aqo
@@ -231,7 +232,6 @@ extern int	auto_tuning_infinite_loop;
 extern double auto_tuning_convergence_error;
 
 /* Machine learning parameters */
-
 #define WIDTH_1 (150) // size of the output of the first layer
 #define WIDTH_2 (150) // size of the output of the second layer
 #define lr (0.001) // learning rate
@@ -255,7 +255,7 @@ extern double log_selectivity_lower_bound;
 /* Parameters for current query */
 extern QueryContextData query_context;
 extern int njoins;
-extern char				*query_text;
+extern char *query_text;
 
 /* Memory context for long-live data */
 extern MemoryContext AQOMemoryContext;
@@ -265,61 +265,67 @@ extern post_parse_analyze_hook_type prev_post_parse_analyze_hook;
 extern planner_hook_type prev_planner_hook;
 extern ExecutorStart_hook_type prev_ExecutorStart_hook;
 extern ExecutorEnd_hook_type prev_ExecutorEnd_hook;
-extern		set_baserel_rows_estimate_hook_type
-			prev_set_baserel_rows_estimate_hook;
-extern		get_parameterized_baserel_size_hook_type
-			prev_get_parameterized_baserel_size_hook;
-extern		set_joinrel_size_estimates_hook_type
-			prev_set_joinrel_size_estimates_hook;
-extern		get_parameterized_joinrel_size_hook_type
-			prev_get_parameterized_joinrel_size_hook;
-extern		copy_generic_path_info_hook_type
-			prev_copy_generic_path_info_hook;
+extern set_baserel_rows_estimate_hook_type
+										prev_set_foreign_rows_estimate_hook;
+extern set_baserel_rows_estimate_hook_type
+										prev_set_baserel_rows_estimate_hook;
+extern get_parameterized_baserel_size_hook_type
+									prev_get_parameterized_baserel_size_hook;
+extern set_joinrel_size_estimates_hook_type
+										prev_set_joinrel_size_estimates_hook;
+extern get_parameterized_joinrel_size_hook_type
+									prev_get_parameterized_joinrel_size_hook;
+extern copy_generic_path_info_hook_type prev_copy_generic_path_info_hook;
 extern ExplainOnePlan_hook_type prev_ExplainOnePlan_hook;
 
 extern void ppi_hook(ParamPathInfo *ppi);
 
 /* Hash functions */
-int			get_query_hash(Query *parse, const char *query_text);
+int get_query_hash(Query *parse, const char *query_text);
 extern int get_fss_for_object(List *clauselist, List *selectivities, List *relidslist,
 		   int *nfeatures, int *nrels, double **features, int **rels, int **sorted_clauses);
-void		get_eclasses(List *clauselist, int *nargs,
-						 int **args_hash, int **eclass_hash);
-int			get_clause_hash(Expr *clause, int nargs,
-							int *args_hash, int *eclass_hash);
+void get_eclasses(List *clauselist, int *nargs, int **args_hash,
+				  int **eclass_hash);
+int get_clause_hash(Expr *clause, int nargs, int *args_hash, int *eclass_hash);
 
 
 /* Storage interaction */
 bool find_query(int query_hash,
-		   Datum *search_values,
-		   bool *search_nulls);
+				Datum *search_values,
+				bool *search_nulls);
 bool add_query(int query_hash, bool learn_aqo, bool use_aqo,
-		  int fspace_hash, bool auto_tuning);
+			   int fspace_hash, bool auto_tuning);
 bool update_query(int query_hash, bool learn_aqo, bool use_aqo,
-			 int fspace_hash, bool auto_tuning);
-bool		add_query_text(int query_hash, const char *query_text);
+				  int fspace_hash, bool auto_tuning);
+bool add_query_text(int query_hash, const char *query_text);
 bool load_fss(int fss_hash, int *ncols, int *n_batches, int **hashes, double **matrix, double *targets,  double **W1, double **W1_m, double **W1_v, double **W2, double **W2_m, double **W2_v, double *W3, double *W3_m, double *W3_v, double *b1, double *b1_m, double *b1_v, double *b2, double *b2_m, double *b2_v, double *b3, double *b3_m, double *b3_v, int **step_layer1, int *steps);
 extern bool update_fss(int fss_hash, int ncols, int n_batches, int *hashes, double **matrix, double *targets,  double **W1, double **W1_m, double **W1_v, double **W2, double **W2_m, double **W2_v, double *W3, double *W3_m, double *W3_v, double *b1, double *b1_m, double *b1_v, double *b2, double *b2_m, double *b2_v, double b3, double b3_m, double b3_v, int *step_layer1, int steps);
-QueryStat  *get_aqo_stat(int query_hash);
-void		update_aqo_stat(int query_hash, QueryStat * stat);
-void		init_deactivated_queries_storage(void);
-void		fini_deactivated_queries_storage(void);
-bool		query_is_deactivated(int query_hash);
-void		add_deactivated_query(int query_hash);
+QueryStat *get_aqo_stat(int query_hash);
+void update_aqo_stat(int query_hash, QueryStat * stat);
+void init_deactivated_queries_storage(void);
+void fini_deactivated_queries_storage(void);
+bool query_is_deactivated(int query_hash);
+void add_deactivated_query(int query_hash);
 
 /* Query preprocessing hooks */
-void		get_query_text(ParseState *pstate, Query *query);
+void get_query_text(ParseState *pstate, Query *query);
 PlannedStmt *call_default_planner(Query *parse,
-					 int cursorOptions,
-					 ParamListInfo boundParams);
+								  const char *query_string,
+								  int cursorOptions,
+								  ParamListInfo boundParams);
 PlannedStmt *aqo_planner(Query *parse,
-			int cursorOptions,
-			ParamListInfo boundParams);
+						 const char *query_string,
+						 int cursorOptions,
+						 ParamListInfo boundParams);
 void print_into_explain(PlannedStmt *plannedstmt, IntoClause *into,
-			   ExplainState *es, const char *queryString,
-			   ParamListInfo params, const instr_time *planduration,
-			   QueryEnvironment *queryEnv);
-void		disable_aqo_for_query(void);
+						ExplainState *es, const char *queryString,
+						ParamListInfo params, const instr_time *planduration,
+						QueryEnvironment *queryEnv);
+extern void print_node_explain(ExplainState *es,
+							   PlanState *ps,
+							   Plan *plan,
+							   double rows);
+void disable_aqo_for_query(void);
 
 /* Cardinality estimation hooks */
 extern void aqo_set_baserel_rows_estimate(PlannerInfo *root, RelOptInfo *rel);

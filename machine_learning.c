@@ -5,10 +5,6 @@
  *
  * This module does not know anything about DBMS, cardinalities and all other
  * stuff. It learns matrices, predicts values and is quite happy.
- * The proposed method is designed for working with limited number of objects.
- * It is guaranteed that number of rows in the matrix will not exceed aqo_K
- * setting after learning procedure. This property also allows to adapt to
- * workloads which properties are slowly changed.
  *
  *******************************************************************************
  *

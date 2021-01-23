@@ -5,7 +5,7 @@
  *
  *******************************************************************************
  *
- * Copyright (c) 2016-2020, Postgres Professional
+ * Copyright (c) 2016-2021, Postgres Professional
  *
  * IDENTIFICATION
  *	  aqo/path_utils.c
@@ -79,7 +79,7 @@ get_path_clauses(Path *path, PlannerInfo *root, List **selectivities)
 	List	   *inner_sel = NIL;
 	List	   *outer;
 	List	   *outer_sel = NIL;
-	List	   *cur;
+	List	   *cur = NIL;
 	List	   *cur_sel = NIL;
 
 	Assert(selectivities != NULL);
@@ -113,6 +113,7 @@ get_path_clauses(Path *path, PlannerInfo *root, List **selectivities)
 									selectivities);
 			break;
 		case T_GatherPath:
+		case T_GatherMergePath:
 			return get_path_clauses(((GatherPath *) path)->subpath, root,
 									selectivities);
 			break;
@@ -160,6 +161,32 @@ get_path_clauses(Path *path, PlannerInfo *root, List **selectivities)
 			return get_path_clauses(((LimitPath *) path)->subpath, root,
 									selectivities);
 			break;
+		case T_SubqueryScanPath:
+			return get_path_clauses(((SubqueryScanPath *) path)->subpath, root,
+									selectivities);
+			break;
+		case T_AppendPath:
+		{
+			ListCell *lc;
+
+			foreach (lc, ((AppendPath *) path)->subpaths)
+			{
+				Path *subpath = lfirst(lc);
+
+				cur = list_concat(cur, list_copy(
+					get_path_clauses(subpath, root, selectivities)));
+				cur_sel = list_concat(cur_sel, *selectivities);
+			}
+			cur = list_concat(cur, list_copy(path->parent->baserestrictinfo));
+			*selectivities = list_concat(cur_sel,
+										 get_selectivities(root,
+											path->parent->baserestrictinfo,
+											0, JOIN_INNER, NULL));
+			return cur;
+		}
+			break;
+		case T_ForeignPath:
+			/* The same as in the default case */
 		default:
 			cur = list_concat(list_copy(path->parent->baserestrictinfo),
 							  path->param_info ?

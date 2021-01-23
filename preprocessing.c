@@ -49,7 +49,7 @@
  *
  *******************************************************************************
  *
- * Copyright (c) 2016-2020, Postgres Professional
+ * Copyright (c) 2016-2021, Postgres Professional
  *
  * IDENTIFICATION
  *	  aqo/preprocessing.c
@@ -91,13 +91,20 @@ get_query_text(ParseState *pstate, Query *query)
  */
 PlannedStmt *
 call_default_planner(Query *parse,
+					 const char *query_string,
 					 int cursorOptions,
 					 ParamListInfo boundParams)
 {
 	if (prev_planner_hook)
-		return prev_planner_hook(parse, cursorOptions, boundParams);
+		return prev_planner_hook(parse,
+								 query_string,
+								 cursorOptions,
+								 boundParams);
 	else
-		return standard_planner(parse, cursorOptions, boundParams);
+		return standard_planner(parse,
+								query_string,
+								cursorOptions,
+								boundParams);
 }
 
 /*
@@ -110,6 +117,7 @@ call_default_planner(Query *parse,
  */
 PlannedStmt *
 aqo_planner(Query *parse,
+			const char *query_string,
 			int cursorOptions,
 			ParamListInfo boundParams)
 {
@@ -126,6 +134,8 @@ aqo_planner(Query *parse,
 	  */
 	if ((parse->commandType != CMD_SELECT && parse->commandType != CMD_INSERT &&
 		parse->commandType != CMD_UPDATE && parse->commandType != CMD_DELETE) ||
+		strstr(application_name, "postgres_fdw") != NULL || /* Prevent distributed deadlocks */
+		strstr(application_name, "pgfdw:") != NULL || /* caused by fdw */
 		get_extension_oid("aqo", true) == InvalidOid ||
 		creating_extension ||
 		IsParallelWorker() ||
@@ -134,7 +144,10 @@ aqo_planner(Query *parse,
 		RecoveryInProgress())
 	{
 		disable_aqo_for_query();
-		return call_default_planner(parse, cursorOptions, boundParams);
+		return call_default_planner(parse,
+									query_string,
+									cursorOptions,
+									boundParams);
 	}
 
 	INSTR_TIME_SET_CURRENT(query_context.query_starttime);
@@ -144,7 +157,10 @@ aqo_planner(Query *parse,
 	if (query_is_deactivated(query_context.query_hash))
 	{
 		disable_aqo_for_query();
-		return call_default_planner(parse, cursorOptions, boundParams);
+		return call_default_planner(parse,
+									query_string,
+									cursorOptions,
+									boundParams);
 	}
 
 	query_is_stored = find_query(query_context.query_hash, &query_params[0],
@@ -274,7 +290,10 @@ aqo_planner(Query *parse,
 		query_context.fspace_hash = query_context.query_hash;
 	}
 
-	return call_default_planner(parse, cursorOptions, boundParams);
+	return call_default_planner(parse,
+								query_string,
+								cursorOptions,
+								boundParams);
 }
 
 /*

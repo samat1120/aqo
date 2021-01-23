@@ -12,7 +12,7 @@
  *
  *******************************************************************************
  *
- * Copyright (c) 2016-2020, Postgres Professional
+ * Copyright (c) 2016-2021, Postgres Professional
  *
  * IDENTIFICATION
  *	  aqo/hash.c
@@ -27,6 +27,9 @@ static int	get_int_array_hash(int *arr, int len);
 static int	get_unsorted_unsafe_int_array_hash(int *arr, int len);
 static int	get_unordered_int_list_hash(List *lst);
 
+static int	get_relidslist_hash(List *relidslist);
+static int get_fss_hash(int clauses_hash, int eclasses_hash,
+			 int relidslist_hash);
 
 static char *replace_patterns(const char *str, const char *start_pattern,
 				 bool (*end_pattern) (char ch));
@@ -306,6 +309,31 @@ replace_patterns(const char *str, const char *start_pattern,
 	return res;
 }
 
+/*
+ * Computes hash for given feature subspace.
+ * Hash is supposed to be clause-order-insensitive.
+ */
+int
+get_fss_hash(int clauses_hash, int eclasses_hash, int relidslist_hash)
+{
+	int			hashes[3];
+
+	hashes[0] = clauses_hash;
+	hashes[1] = eclasses_hash;
+	hashes[2] = relidslist_hash;
+	return DatumGetInt32(hash_any((const unsigned char *) hashes,
+								  3 * sizeof(*hashes)));
+}
+
+/*
+ * Computes hash for given list of relids.
+ * Hash is supposed to be relids-order-insensitive.
+ */
+int
+get_relidslist_hash(List *relidslist)
+{
+	return get_unordered_int_list_hash(relidslist);
+}
 
 /*
  * Returns the C-string in which the substrings of kind "{CONST.*}" are

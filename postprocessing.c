@@ -9,7 +9,7 @@
  *
  *******************************************************************************
  *
- * Copyright (c) 2016-2020, Postgres Professional
+ * Copyright (c) 2016-2021, Postgres Professional
  *
  * IDENTIFICATION
  *	  aqo/postprocessing.c
@@ -19,6 +19,7 @@
 #include "aqo.h"
 #include "access/parallel.h"
 #include "optimizer/optimizer.h"
+#include "postgres_fdw.h"
 #include "utils/queryenvironment.h"
 
 typedef struct
@@ -68,6 +69,11 @@ static void StorePlanInternals(QueryDesc *queryDesc);
 static bool ExtractFromQueryContext(QueryDesc *queryDesc);
 static void RemoveFromQueryContext(QueryDesc *queryDesc);
 
+/*
+ * This is the critical section: only one runner is allowed to be inside this
+ * function for one feature subspace.
+ * matrix and targets are just preallocated memory for computations.
+ */
 static void
 nn_init (int ncols, double **W1, double **W2, double *W3, double *b1, double *b2, double *b3){ //initializing weights (standard Xavier http://proceedings.mlr.press/v9/glorot10a/glorot10a.pdf)
     double	stdv;
@@ -515,7 +521,9 @@ learnOnPlanState(PlanState *p, void *context)
 			ctx->relidslist = list_copy(p->plan->path_relids);
 
 		if (p->instrument && (p->righttree != NULL || p->lefttree == NULL ||
-							  p->plan->path_clauses != NIL))
+							  p->plan->path_clauses != NIL ||
+							  IsA(p, ForeignScanState) ||
+							  IsA(p, AppendState) || IsA(p, MergeAppendState)))
 		{
 			double learn_rows = 0.;
 			double predicted = 0.;
@@ -805,7 +813,7 @@ end:
 void
 aqo_copy_generic_path_info(PlannerInfo *root, Plan *dest, Path *src)
 {
-	bool		is_join_path;
+	bool is_join_path;
 
 	if (prev_copy_generic_path_info_hook)
 		prev_copy_generic_path_info_hook(root, dest, src);
@@ -830,6 +838,47 @@ aqo_copy_generic_path_info(PlannerInfo *root, Plan *dest, Path *src)
 		dest->path_clauses = ((JoinPath *) src)->joinrestrictinfo;
 		dest->path_jointype = ((JoinPath *) src)->jointype;
 	}
+	else if (src->type == T_ForeignPath)
+	{
+		ForeignPath *fpath = (ForeignPath *) src;
+		PgFdwRelationInfo *fpinfo = (PgFdwRelationInfo *) fpath->path.parent->fdw_private;
+
+		/*
+		 * Pushed down foreign join keeps clauses in special fdw_private
+		 * structure.
+		 * I'm not sure what fpinfo structure keeps clauses for sufficient time.
+		 * So, copy clauses.
+		 */
+
+		dest->path_clauses = list_concat(list_copy(fpinfo->joinclauses),
+										 list_copy(fpinfo->remote_conds));
+		dest->path_clauses = list_concat(dest->path_clauses,
+										 list_copy(fpinfo->local_conds));
+
+		dest->path_jointype = ((JoinPath *) src)->jointype;
+
+		dest->path_relids = get_list_of_relids(root, fpinfo->lower_subquery_rels);
+
+		if (fpinfo->outerrel)
+		{
+			dest->path_clauses = list_concat(dest->path_clauses,
+								list_copy(fpinfo->outerrel->baserestrictinfo));
+			dest->path_clauses = list_concat(dest->path_clauses,
+								list_copy(fpinfo->outerrel->joininfo));
+			dest->path_relids = list_concat(dest->path_relids,
+							get_list_of_relids(root, fpinfo->outerrel->relids));
+		}
+
+		if (fpinfo->innerrel)
+		{
+			dest->path_clauses = list_concat(dest->path_clauses,
+								list_copy(fpinfo->innerrel->baserestrictinfo));
+			dest->path_clauses = list_concat(dest->path_clauses,
+								list_copy(fpinfo->innerrel->joininfo));
+			dest->path_relids = list_concat(dest->path_relids,
+							get_list_of_relids(root, fpinfo->innerrel->relids));
+		}
+	}
 	else
 	{
 		dest->path_clauses = list_concat(
@@ -838,7 +887,8 @@ aqo_copy_generic_path_info(PlannerInfo *root, Plan *dest, Path *src)
 		dest->path_jointype = JOIN_INNER;
 	}
 
-	dest->path_relids = get_list_of_relids(root, src->parent->relids);
+	dest->path_relids = list_concat(dest->path_relids,
+								get_list_of_relids(root, src->parent->relids));
 	dest->path_parallel_workers = src->parallel_workers;
 	dest->was_parametrized = (src->param_info != NULL);
 
@@ -967,59 +1017,99 @@ RemoveFromQueryContext(QueryDesc *queryDesc)
 	pfree(enr);
 }
 
+void
+print_node_explain(ExplainState *es, PlanState *ps, Plan *plan, double rows)
+{
+	int wrkrs = 1;
+	double error = -1.;
+
+	if (!aqo_details || !plan || !ps->instrument)
+		return;
+
+	if (ps->worker_instrument && IsParallelTuplesProcessing(plan))
+	{
+		int i;
+
+		for (i = 0; i < ps->worker_instrument->num_workers; i++)
+		{
+			Instrumentation *instrument = &ps->worker_instrument->instrument[i];
+
+			if (instrument->nloops <= 0)
+				continue;
+
+			wrkrs++;
+		}
+	}
+
+	if (plan->predicted_cardinality > 0.)
+	{
+		error = 100. * (plan->predicted_cardinality - (rows*wrkrs))
+									/ plan->predicted_cardinality;
+		appendStringInfo(es->str,
+						 " (AQO: cardinality=%.0lf, error=%.0lf%%",
+						 plan->predicted_cardinality, error);
+	}
+	else
+		appendStringInfo(es->str, " (AQO not used");
+
+	if (aqo_show_hash)
+		appendStringInfo(es->str, ", fss hash = %d", plan->fss_hash);
+	appendStringInfoChar(es->str, ')');
+}
+
 /*
  * Prints if the plan was constructed with AQO.
  */
-void print_into_explain(PlannedStmt *plannedstmt, IntoClause *into,
-			   ExplainState *es, const char *queryString,
-			   ParamListInfo params, const instr_time *planduration,
-			   QueryEnvironment *queryEnv)
+void
+print_into_explain(PlannedStmt *plannedstmt, IntoClause *into,
+				   ExplainState *es, const char *queryString,
+				   ParamListInfo params, const instr_time *planduration,
+				   QueryEnvironment *queryEnv)
 {
 	if (prev_ExplainOnePlan_hook)
 		prev_ExplainOnePlan_hook(plannedstmt, into, es, queryString,
-								params, planduration, queryEnv);
+								 params, planduration, queryEnv);
 
-#ifdef AQO_EXPLAIN
+	if (!aqo_details)
+		return;
+
 	/* Report to user about aqo state only in verbose mode */
-	if (es->verbose)
+	ExplainPropertyBool("Using aqo", query_context.use_aqo, es);
+
+	switch (aqo_mode)
 	{
-		ExplainPropertyBool("Using aqo", query_context.use_aqo, es);
-
-		switch (aqo_mode)
-		{
-		case AQO_MODE_INTELLIGENT:
-			ExplainPropertyText("AQO mode", "INTELLIGENT", es);
-			break;
-		case AQO_MODE_FORCED:
-			ExplainPropertyText("AQO mode", "FORCED", es);
-			break;
-		case AQO_MODE_CONTROLLED:
-			ExplainPropertyText("AQO mode", "CONTROLLED", es);
-			break;
-		case AQO_MODE_LEARN:
-			ExplainPropertyText("AQO mode", "LEARN", es);
-			break;
-		case AQO_MODE_FROZEN:
-			ExplainPropertyText("AQO mode", "FROZEN", es);
-			break;
-		case AQO_MODE_DISABLED:
-			ExplainPropertyText("AQO mode", "DISABLED", es);
-			break;
-		default:
-			elog(ERROR, "Bad AQO state");
-			break;
-		}
-
-		/*
-		 * Query hash provides an user the conveniently use of the AQO
-		 * auxiliary functions.
-		 */
-		if (aqo_mode != AQO_MODE_DISABLED || force_collect_stat)
-		{
-			ExplainPropertyInteger("Query hash", NULL,
-												query_context.query_hash, es);
-			ExplainPropertyInteger("JOINS", NULL, njoins, es);
-		}
+	case AQO_MODE_INTELLIGENT:
+		ExplainPropertyText("AQO mode", "INTELLIGENT", es);
+		break;
+	case AQO_MODE_FORCED:
+		ExplainPropertyText("AQO mode", "FORCED", es);
+		break;
+	case AQO_MODE_CONTROLLED:
+		ExplainPropertyText("AQO mode", "CONTROLLED", es);
+		break;
+	case AQO_MODE_LEARN:
+		ExplainPropertyText("AQO mode", "LEARN", es);
+		break;
+	case AQO_MODE_FROZEN:
+		ExplainPropertyText("AQO mode", "FROZEN", es);
+		break;
+	case AQO_MODE_DISABLED:
+		ExplainPropertyText("AQO mode", "DISABLED", es);
+		break;
+	default:
+		elog(ERROR, "Bad AQO state");
+		break;
 	}
-#endif
+
+	/*
+	 * Query hash provides an user the conveniently use of the AQO
+	 * auxiliary functions.
+	 */
+	if (aqo_mode != AQO_MODE_DISABLED || force_collect_stat)
+	{
+		if (aqo_show_hash)
+			ExplainPropertyInteger("Query hash", NULL,
+									query_context.query_hash, es);
+		ExplainPropertyInteger("JOINS", NULL, njoins, es);
+	}
 }

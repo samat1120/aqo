@@ -8,7 +8,7 @@
  *
  *******************************************************************************
  *
- * Copyright (c) 2016-2020, Postgres Professional
+ * Copyright (c) 2016-2021, Postgres Professional
  *
  * IDENTIFICATION
  *	  aqo/storage.c
@@ -28,9 +28,6 @@ static void deform_matrix(Datum datum, double **matrix);
 
 static ArrayType *form_vector(double *vector, int nrows);
 static void deform_vector(Datum datum, double *vector, int *nelems);
-
-static ArrayType *form_int_vector(int *vector, int nrows);
-static void deform_int_vector(Datum datum, int *vector, int *nelems);
 
 #define FormVectorSz(v_name)			(form_vector((v_name), (v_name ## _size)))
 #define DeformVectorSz(datum, v_name)	(deform_vector((datum), (v_name), &(v_name ## _size)))
@@ -237,7 +234,10 @@ update_query(int query_hash, bool learn_aqo, bool use_aqo,
 	slot = MakeSingleTupleTableSlot(query_index_scan->heapRelation->rd_att,
 														&TTSOpsBufferHeapTuple);
 	find_ok = index_getnext_slot(query_index_scan, ForwardScanDirection, slot);
-	Assert(find_ok);
+	if (!find_ok)
+		elog(PANIC, "[AQO]: Update of non-existed query: query hash: %d, fss hash: %d, use aqo: %s",
+			 query_hash, fspace_hash, use_aqo ? "true" : "false");
+
 	tuple = ExecFetchSlotHeapTuple(slot, true, &shouldFree);
 	Assert(shouldFree != true);
 
@@ -929,26 +929,6 @@ deform_matrix(Datum datum, double **matrix)
 }
 
 /*
- * Expands int vector from storage into simple C-array.
- * Also returns its number of elements.
- */
-void
-deform_int_vector(Datum datum, int *vector, int *nelems)
-{
-	ArrayType  *array = DatumGetArrayTypePCopy(PG_DETOAST_DATUM(datum));
-	Datum	   *values;
-	int			i;
-
-	deconstruct_array(array,
-					  INT4OID, 4, true, 'i',
-					  &values, NULL, nelems);
-	for (i = 0; i < *nelems; ++i)
-		vector[i] = DatumGetInt32(values[i]);
-	pfree(values);
-	pfree(array);
-}
-
-/*
  * Expands vector from storage into simple C-array.
  * Also returns its number of elements.
  */
@@ -991,26 +971,6 @@ form_matrix(double **matrix, int nrows, int ncols)
 
 	array = construct_md_array(elems, NULL, 2, dims, lbs,
 							   FLOAT8OID, 8, FLOAT8PASSBYVAL, 'd');
-	pfree(elems);
-	return array;
-}
-
-ArrayType *
-form_int_vector(int *vector, int nrows)
-{
-	Datum	   *elems;
-	ArrayType  *array;
-	int			dims[1];
-	int			lbs[1];
-	int			i;
-
-	dims[0] = nrows;
-	lbs[0] = 1;
-	elems = palloc(sizeof(*elems) * nrows);
-	for (i = 0; i < nrows; ++i)
-		elems[i] = Int32GetDatum(vector[i]);
-	array = construct_md_array(elems, NULL, 1, dims, lbs,
-								INT4OID, 4, true, 'i');
 	pfree(elems);
 	return array;
 }
@@ -1101,9 +1061,13 @@ my_index_insert(Relation indexRelation,
 #if PG_VERSION_NUM < 100000
 	return index_insert(indexRelation, values, isnull, heap_t_ctid,
 						heapRelation, checkUnique);
-#else
+#elif PG_VERSION_NUM < 140000
 	return index_insert(indexRelation, values, isnull, heap_t_ctid,
 						heapRelation, checkUnique,
+						BuildIndexInfo(indexRelation));
+#else
+	return index_insert(indexRelation, values, isnull, heap_t_ctid,
+						heapRelation, checkUnique, false,
 						BuildIndexInfo(indexRelation));
 #endif
 }
