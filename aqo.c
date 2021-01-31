@@ -109,7 +109,7 @@ _PG_init(void)
 							 NULL,
 							 NULL);
 
-	DefineCustomEnumVariable("aqo.forced_learning",
+	DefineCustomBoolVariable("aqo.forced_learning",
 							 "mode of forced.",
 							 NULL,
 							 &aqo_forced_learning,
