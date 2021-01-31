@@ -17,7 +17,7 @@ void _PG_init(void);
 
 /* Strategy of determining feature space for new queries. */
 int		aqo_mode;
-int		aqo_forced_learning;
+bool		aqo_forced_learning;
 bool	force_collect_stat;
 bool	aqo_show_hash;
 bool	aqo_details;
@@ -114,7 +114,6 @@ _PG_init(void)
 							 NULL,
 							 &aqo_forced_learning,
 							 false,
-							 format_options,
 							 PGC_USERSET,
 							 0,
 							 NULL,
