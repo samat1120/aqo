@@ -187,7 +187,7 @@ aqo_planner(Query *parse,
 				break;
 			case AQO_MODE_FORCED:
 				query_context.adding_query = false;
-				query_context.learn_aqo = true;
+				query_context.learn_aqo = aqo_forced_learning;
 				query_context.use_aqo = true;
 				query_context.auto_tuning = false;
 				query_context.fspace_hash = 0;
