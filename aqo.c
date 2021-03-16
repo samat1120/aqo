@@ -24,6 +24,7 @@ void _PG_init(void);
 
 /* Strategy of determining feature space for new queries. */
 int		aqo_mode;
+bool		aqo_forced_learning;
 bool	force_collect_stat;
 
 /*
@@ -120,6 +121,18 @@ _PG_init(void)
 							 &aqo_mode,
 							 AQO_MODE_CONTROLLED,
 							 format_options,
+							 PGC_USERSET,
+							 0,
+							 NULL,
+							 NULL,
+							 NULL
+	);
+	
+	DefineCustomBoolVariable("aqo.forced_learning",
+							 "mode of forced.",
+							 NULL,
+							 &aqo_forced_learning,
+							 false,
 							 PGC_USERSET,
 							 0,
 							 NULL,
